@@ -11,7 +11,7 @@ go install github.com/yu1745/bili-dl@latest
 
 ## 功能
 
-下载b站视频，支持批量下载，支持指定cookie实现高画质视频下载，支持通过UP主mid获取其所有视频
+下载b站视频，支持批量下载，支持指定cookie实现高画质视频下载，支持通过UP主mid获取其所有视频，支持查看视频DASH流信息
 
 ``` shell
 -bv string
@@ -19,6 +19,7 @@ go install github.com/yu1745/bili-dl@latest
 -c string
     cookie,cookie的key是SESSDATA,不设置只能下载清晰度小于等于480P的视频
 -d    合并后是否删除单视频和单音频 (default true)
+-i    仅查看视频DASH信息, 不下载
 -j int
     同时下载的任务数
     机械硬盘不应超过5 (default 1)
@@ -36,6 +37,8 @@ go install github.com/yu1745/bili-dl@latest
     UP主mid,设置后会下载该UP主的所有视频
 ```
 
+也可以直接在命令行末尾传入视频链接或BV号作为位置参数，多个用空格分隔。
+
 ## 使用示例
 
 ``` shell
@@ -47,4 +50,13 @@ bili-dl -bv "BV1iyQhB5Eze,BV1BzQhBmEtK" -c "你的SESSDATA" -o /path/to/save -j 
 
 # 通过UP主mid下载该UP所有视频
 bili-dl -up 3546944890734614 -c "你的SESSDATA" -o /path/to/save -j 3
+
+# 直接传入视频链接下载
+bili-dl https://www.bilibili.com/video/BV1iyQhB5Eze -c "你的SESSDATA" -o /path/to/save
+
+# 直接传入多个BV号下载
+bili-dl BV1iyQhB5Eze BV1BzQhBmEtK -c "你的SESSDATA" -o /path/to/save
+
+# 仅查看视频DASH信息，不下载
+bili-dl -i https://www.bilibili.com/video/BV1iyQhB5Eze
 ```
