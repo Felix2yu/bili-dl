@@ -1,6 +1,8 @@
 module github.com/yu1745/bili-dl
 
-go 1.19
+go 1.26
+
+toolchain go1.26.0
 
 require github.com/json-iterator/go v1.1.12
 

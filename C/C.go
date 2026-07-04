@@ -13,6 +13,7 @@ var (
 	Debug            bool
 	AddBVSuffix      bool
 	DisableOverwrite bool
+	InfoOnly         bool
 )
 
 const (
