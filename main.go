@@ -29,6 +29,7 @@ func init() {
 	// flag.BoolVar(&C.Debug, "debug", false, "是否打印调试信息")
 	flag.BoolVar(&C.AddBVSuffix, "suffix", true, "在下载的视频文件名后添加bv号\n用来解决视频重名问题\n关闭后跳过已下载功能将失效")
 	flag.BoolVar(&C.DisableOverwrite, "no-overwrite", true, "跳过下载过的视频\n注意: 需要先前下载时没有指定suffix为false")
+	flag.BoolVar(&C.InfoOnly, "i", false, "仅查看视频DASH信息, 不下载")
 	flag.Parse()
 	C.WD, _ = os.Getwd()
 	if runtime.GOOS == "windows" {
@@ -120,6 +121,13 @@ func main() {
 					log.Println(err)
 					return
 				}
+				if C.InfoOnly {
+					err = api.PrintDASHInfo(*video)
+					if err != nil {
+						log.Println(err)
+					}
+					return
+				}
 				stream, err := api.GetStream(*video)
 				if err != nil {
 					log.Println(err)
@@ -155,6 +163,13 @@ func main() {
 					log.Println(err)
 					return
 				}
+				if C.InfoOnly {
+					err = api.PrintDASHInfo(v)
+					if err != nil {
+						log.Println(err)
+					}
+					return
+				}
 				for i := 0; i < 3; i++ {
 					stream, err := api.GetStream(v)
 					if err != nil {
@@ -180,5 +195,9 @@ func main() {
 		}
 		limit.Wait()
 	}
-	log.Println("下载完成")
+	if C.InfoOnly {
+		log.Println("DASH信息查看完成")
+	} else {
+		log.Println("下载完成")
+	}
 }

@@ -268,6 +268,85 @@ func GetStream(v Video) (*Stream, error) {
 	return stream, nil
 }
 
+func PrintDASHInfo(v Video) error {
+	url := "https://api.bilibili.com/x/player/wbi/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
+	parse, _ := url2.Parse(url)
+	query := parse.Query()
+	query.Add("bvid", v.BV)
+	query.Add("cid", v.Cid)
+	parse.RawQuery = query.Encode()
+	url = parse.String()
+	var err error
+	url, err = sign(url)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
+	req.Header.Set("Referer", "https://www.bilibili.com/")
+	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: C.Cookie})
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("===== 视频DASH信息 =====\n")
+	fmt.Printf("标题: %s\n", v.Title)
+	fmt.Printf("BV号: %s\n", v.BV)
+	fmt.Printf("CID: %s\n", v.Cid)
+	fmt.Println()
+
+	videos := jsoniter.Get(body, "data", "dash", "video").ToString()
+	var videoStreams []map[string]any
+	if err := jsoniter.Unmarshal([]byte(videos), &videoStreams); err != nil {
+		return fmt.Errorf("解析视频流失败: %w", err)
+	}
+
+	fmt.Printf("视频流 (%d 个):\n", len(videoStreams))
+	for i, vs := range videoStreams {
+		id := getFloat(vs, "id")
+		codecs := getString(vs, "codecs")
+		width := getFloat(vs, "width")
+		height := getFloat(vs, "height")
+		bandwidth := getFloat(vs, "bandwidth")
+		baseURL := getString(vs, "base_url")
+		fmt.Printf("  [%d] 画质ID: %.0f | 分辨率: %.0fx%.0f | 编码: %s | 码率: %.0f bps\n",
+			i+1, id, width, height, codecs, bandwidth)
+		fmt.Printf("      URL: %s\n", baseURL)
+	}
+	fmt.Println()
+
+	audios := jsoniter.Get(body, "data", "dash", "audio").ToString()
+	var audioStreams []map[string]any
+	if err := jsoniter.Unmarshal([]byte(audios), &audioStreams); err != nil {
+		return fmt.Errorf("解析音频流失败: %w", err)
+	}
+
+	fmt.Printf("音频流 (%d 个):\n", len(audioStreams))
+	for i, as := range audioStreams {
+		id := getFloat(as, "id")
+		codecs := getString(as, "codecs")
+		bandwidth := getFloat(as, "bandwidth")
+		baseURL := getString(as, "base_url")
+		fmt.Printf("  [%d] 音质ID: %.0f | 编码: %s | 码率: %.0f bps\n",
+			i+1, id, codecs, bandwidth)
+		fmt.Printf("      URL: %s\n", baseURL)
+	}
+	fmt.Println("========================")
+	return nil
+}
+
 func Dl(stream *Stream) error {
 	stream.Title = fileNameFix(stream.Title)
 	err := DV(stream)
