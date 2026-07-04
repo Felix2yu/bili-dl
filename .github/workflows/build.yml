@@ -40,6 +40,9 @@ jobs:
       matrix:
         include:
           - goos: linux
+            goarch: amd64
+            name: linux-amd64
+          - goos: linux
             goarch: arm64
             name: linux-arm64
           - goos: darwin
