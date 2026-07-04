@@ -1,8 +1,8 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
-	jsoniter "github.com/json-iterator/go"
 	"testing"
 )
 
@@ -13,7 +13,11 @@ func TestVideoInfo(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t.Log(jsoniter.Get(bytes, "data", "cid").ToString())
+	var resp biliVideoInfoResp
+	if err := json.Unmarshal(bytes, &resp); err != nil {
+		t.Error(err)
+	}
+	t.Log(resp.Data.Cid)
 }
 
 func TestAllVideo(t *testing.T) {

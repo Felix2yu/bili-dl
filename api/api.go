@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/yu1745/bili-dl/C"
 )
 
@@ -24,6 +24,47 @@ var client = &http.Client{
 		//禁止复用连接，防止同一个连接长时间大流量被限速
 		DisableKeepAlives: true,
 	},
+}
+
+type biliVideoInfoResp struct {
+	Data struct {
+		Cid   string `json:"cid"`
+		Title string `json:"title"`
+		Page  struct {
+			Count int `json:"count"`
+		} `json:"page"`
+	} `json:"data"`
+}
+
+type biliDashResp struct {
+	Data struct {
+		Dash struct {
+			Video []dashStream `json:"video"`
+			Audio []dashStream `json:"audio"`
+		} `json:"dash"`
+	} `json:"data"`
+}
+
+type dashStream struct {
+	ID        float64 `json:"id"`
+	Codecs    string  `json:"codecs"`
+	Width     float64 `json:"width"`
+	Height    float64 `json:"height"`
+	Bandwidth float64 `json:"bandwidth"`
+	BaseURL   string  `json:"base_url"`
+}
+
+type biliVlistResp struct {
+	Data struct {
+		Page struct {
+			Count int `json:"count"`
+		} `json:"page"`
+		List struct {
+			VList []struct {
+				BV string `json:"bvid"`
+			} `json:"vlist"`
+		} `json:"list"`
+	} `json:"data"`
 }
 
 func videoInfo(bv string) ([]byte, error) {
@@ -53,7 +94,6 @@ func videoInfo(bv string) ([]byte, error) {
 		log.Println(err)
 		return nil, err
 	}
-	//log.Println(string(body))
 	return body, nil
 }
 
@@ -62,11 +102,12 @@ func ResolveVideo(v *Video) (*Video, error) {
 	if err != nil {
 		return nil, err
 	}
-	cid := jsoniter.Get(info, "data", "cid").ToString()
-	title := jsoniter.Get(info, "data", "title").ToString()
-	//v.BV = bv
-	v.Cid = cid
-	v.Title = title
+	var resp biliVideoInfoResp
+	if err := json.Unmarshal(info, &resp); err != nil {
+		return nil, err
+	}
+	v.Cid = resp.Data.Cid
+	v.Title = resp.Data.Title
 	return v, nil
 }
 
@@ -97,17 +138,14 @@ func videoFromUP(mid string, pn int) (rt []byte, err error) {
 
 	res, err := client.Do(req)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
-	//log.Println(string(body))
 	return body, err
 }
 
@@ -115,7 +153,6 @@ type Video struct {
 	Title string `json:"title,omitempty"`
 	BV    string `json:"bv,omitempty"`
 	Cid   string `json:"cid,omitempty"`
-	// Author string `json:"author,omitempty"`
 }
 
 func AllVideo(mid string) ([]Video, error) {
@@ -123,18 +160,20 @@ func AllVideo(mid string) ([]Video, error) {
 	if err != nil {
 		return nil, err
 	}
-	var videos []Video
-	count := jsoniter.Get(bytes, "data", "page", "count").ToInt()
+	var resp biliVlistResp
+	if err := json.Unmarshal(bytes, &resp); err != nil {
+		return nil, err
+	}
+	count := resp.Data.Page.Count
 	if count == 0 {
-		// No videos or API error, try to parse what we got
 		count = 1
 	}
-	// Calculate number of pages (ceiling division)
 	pn := (count + 48) / 49
 	if pn < 1 {
 		pn = 1
 	}
 
+	var videos []Video
 	for i := 1; i <= pn; i++ {
 		time.Sleep(time.Second)
 		bytes, err := videoFromUP(mid, i)
@@ -142,23 +181,17 @@ func AllVideo(mid string) ([]Video, error) {
 			log.Printf("Failed to fetch page %d: %v, continuing...", i, err)
 			continue
 		}
-		vlist := jsoniter.Get(bytes, "data", "list", "vlist").ToString()
-		if vlist == "" {
-			continue
-		}
-		var m []map[string]any
-		if err := jsoniter.Unmarshal([]byte(vlist), &m); err != nil {
+		var pageResp biliVlistResp
+		if err := json.Unmarshal(bytes, &pageResp); err != nil {
 			log.Printf("Failed to parse page %d: %v, continuing...", i, err)
 			continue
 		}
-		for _, v := range m {
-			if bvid := v["bvid"]; bvid != nil {
-				if bvStr, ok := bvid.(string); ok {
-					video := Video{BV: bvStr}
-					videoJson, _ := jsoniter.MarshalToString(&video)
-					println(videoJson)
-					videos = append(videos, video)
-				}
+		for _, v := range pageResp.Data.List.VList {
+			if v.BV != "" {
+				video := Video{BV: v.BV}
+				videoJson, _ := json.Marshal(video)
+				println(string(videoJson))
+				videos = append(videos, video)
 			}
 		}
 	}
@@ -176,25 +209,47 @@ func codec2i(codec string) int {
 	return 0
 }
 
-// Safe map accessors to avoid panics from type assertions
-func getString(m map[string]any, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
+func matchResolution(id float64, width float64, resolution string) bool {
+	switch resolution {
+	case "8k":
+		return id == 127 || width >= 7680
+	case "dolby":
+		return id == 126
+	case "4k":
+		return id == 120
+	case "1080p":
+		return id == 116 || id == 112 || id == 80
+	case "720p":
+		return id == 64
+	case "480p":
+		return id == 32
+	case "360p":
+		return id == 16
+	default:
+		return true
 	}
-	return ""
 }
 
-func getFloat(m map[string]any, key string) float64 {
-	if v, ok := m[key].(float64); ok {
-		return v
+func matchCodec(codecs string, codec string) bool {
+	switch codec {
+	case "av1":
+		return strings.HasPrefix(codecs, "av01")
+	case "hevc":
+		return strings.HasPrefix(codecs, "hev")
+	case "avc":
+		return strings.HasPrefix(codecs, "avc")
+	default:
+		return true
 	}
-	return 0
 }
 
 type Stream struct {
-	V string
-	A string
+	V       string
+	A       string
 	Video
+	VCodec  string
+	VWidth  float64
+	VHeight float64
 }
 
 func GetStream(v Video) (*Stream, error) {
@@ -231,40 +286,62 @@ func GetStream(v Video) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	videos := jsoniter.Get(body, "data", "dash", "video").ToString()
-	var l []map[string]any
-	err = jsoniter.Unmarshal([]byte(videos), &l)
-	if err != nil {
+
+	var dashResp biliDashResp
+	if err := json.Unmarshal(body, &dashResp); err != nil {
 		return nil, err
 	}
-	if len(l) == 0 {
-		return nil, fmt.Errorf("no video streams available")
-	}
-	// Find best video stream without full sort
-	bestIdx := 0
-	for i := 1; i < len(l); i++ {
-		ci, cj := codec2i(getString(l[i], "codecs")), codec2i(getString(l[bestIdx], "codecs"))
-		if ci > cj || (ci == cj && getFloat(l[i], "width") > getFloat(l[bestIdx], "width")) {
-			bestIdx = i
+
+	var videoURL, vCodec string
+	var vWidth, vHeight float64
+
+	if !C.AudioOnly {
+		videoStreams := dashResp.Data.Dash.Video
+		if len(videoStreams) == 0 {
+			return nil, fmt.Errorf("no video streams available")
 		}
+
+		// Filter by resolution and codec
+		var filtered []dashStream
+		for _, s := range videoStreams {
+			if !matchResolution(s.ID, s.Width, C.Resolution) {
+				continue
+			}
+			if !matchCodec(s.Codecs, C.Codec) {
+				continue
+			}
+			filtered = append(filtered, s)
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", C.Resolution, C.Codec)
+		}
+
+		// Select best: codec priority (av1>hevc>avc), then width desc
+		bestIdx := 0
+		for i := 1; i < len(filtered); i++ {
+			ci, cj := codec2i(filtered[i].Codecs), codec2i(filtered[bestIdx].Codecs)
+			if ci > cj || (ci == cj && filtered[i].Width > filtered[bestIdx].Width) {
+				bestIdx = i
+			}
+		}
+		videoURL = filtered[bestIdx].BaseURL
+		vCodec = filtered[bestIdx].Codecs
+		vWidth = filtered[bestIdx].Width
+		vHeight = filtered[bestIdx].Height
 	}
-	audios := jsoniter.Get(body, "data", "dash", "audio").ToString()
-	var l2 []map[string]any
-	err = jsoniter.Unmarshal([]byte(audios), &l2)
-	if err != nil {
-		return nil, err
-	}
-	if len(l2) == 0 {
+
+	audioStreams := dashResp.Data.Dash.Audio
+	if len(audioStreams) == 0 {
 		return nil, fmt.Errorf("no audio streams available")
 	}
 	// Find best audio stream without full sort
 	bestAudioIdx := 0
-	for i := 1; i < len(l2); i++ {
-		if getFloat(l2[i], "bandwidth") > getFloat(l2[bestAudioIdx], "bandwidth") {
+	for i := 1; i < len(audioStreams); i++ {
+		if audioStreams[i].Bandwidth > audioStreams[bestAudioIdx].Bandwidth {
 			bestAudioIdx = i
 		}
 	}
-	stream := &Stream{V: getString(l[bestIdx], "base_url"), A: getString(l2[bestAudioIdx], "base_url"), Video: v}
+	stream := &Stream{V: videoURL, A: audioStreams[bestAudioIdx].BaseURL, Video: v, VCodec: vCodec, VWidth: vWidth, VHeight: vHeight}
 	return stream, nil
 }
 
@@ -301,47 +378,32 @@ func PrintDASHInfo(v Video) error {
 		return err
 	}
 
+	var dashResp biliDashResp
+	if err := json.Unmarshal(body, &dashResp); err != nil {
+		return fmt.Errorf("解析DASH信息失败: %w", err)
+	}
+
 	fmt.Printf("===== 视频DASH信息 =====\n")
 	fmt.Printf("标题: %s\n", v.Title)
 	fmt.Printf("BV号: %s\n", v.BV)
 	fmt.Printf("CID: %s\n", v.Cid)
 	fmt.Println()
 
-	videos := jsoniter.Get(body, "data", "dash", "video").ToString()
-	var videoStreams []map[string]any
-	if err := jsoniter.Unmarshal([]byte(videos), &videoStreams); err != nil {
-		return fmt.Errorf("解析视频流失败: %w", err)
-	}
-
+	videoStreams := dashResp.Data.Dash.Video
 	fmt.Printf("视频流 (%d 个):\n", len(videoStreams))
 	for i, vs := range videoStreams {
-		id := getFloat(vs, "id")
-		codecs := getString(vs, "codecs")
-		width := getFloat(vs, "width")
-		height := getFloat(vs, "height")
-		bandwidth := getFloat(vs, "bandwidth")
-		baseURL := getString(vs, "base_url")
 		fmt.Printf("  [%d] 画质ID: %.0f | 分辨率: %.0fx%.0f | 编码: %s | 码率: %.0f bps\n",
-			i+1, id, width, height, codecs, bandwidth)
-		fmt.Printf("      URL: %s\n", baseURL)
+			i+1, vs.ID, vs.Width, vs.Height, vs.Codecs, vs.Bandwidth)
+		fmt.Printf("      URL: %s\n", vs.BaseURL)
 	}
 	fmt.Println()
 
-	audios := jsoniter.Get(body, "data", "dash", "audio").ToString()
-	var audioStreams []map[string]any
-	if err := jsoniter.Unmarshal([]byte(audios), &audioStreams); err != nil {
-		return fmt.Errorf("解析音频流失败: %w", err)
-	}
-
+	audioStreams := dashResp.Data.Dash.Audio
 	fmt.Printf("音频流 (%d 个):\n", len(audioStreams))
 	for i, as := range audioStreams {
-		id := getFloat(as, "id")
-		codecs := getString(as, "codecs")
-		bandwidth := getFloat(as, "bandwidth")
-		baseURL := getString(as, "base_url")
 		fmt.Printf("  [%d] 音质ID: %.0f | 编码: %s | 码率: %.0f bps\n",
-			i+1, id, codecs, bandwidth)
-		fmt.Printf("      URL: %s\n", baseURL)
+			i+1, as.ID, as.Codecs, as.Bandwidth)
+		fmt.Printf("      URL: %s\n", as.BaseURL)
 	}
 	fmt.Println("========================")
 	return nil
@@ -349,11 +411,13 @@ func PrintDASHInfo(v Video) error {
 
 func Dl(stream *Stream) error {
 	stream.Title = fileNameFix(stream.Title)
-	err := DV(stream)
-	if err != nil {
-		return err
+	if stream.V != "" {
+		err := DV(stream)
+		if err != nil {
+			return err
+		}
 	}
-	err = DA(stream)
+	err := DA(stream)
 	if err != nil {
 		return err
 	}
@@ -404,12 +468,12 @@ func DA(stream *Stream) error {
 	}
 	var file *os.File
 	if C.AddBVSuffix {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp3"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
 		if err != nil {
 			return err
 		}
 	} else {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+".mp3"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+".m4a"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
 		if err != nil {
 			return err
 		}
@@ -428,22 +492,41 @@ func VideoFromBV(bv string) (*Video, error) {
 	if err != nil {
 		return nil, err
 	}
-	cid := jsoniter.Get(info, "data", "cid").ToString()
-	title := jsoniter.Get(info, "data", "title").ToString()
-	video := Video{BV: bv, Cid: cid, Title: title}
+	var resp biliVideoInfoResp
+	if err := json.Unmarshal(info, &resp); err != nil {
+		return nil, err
+	}
+	video := Video{BV: bv, Cid: resp.Data.Cid, Title: resp.Data.Title}
 	log.Printf("%+v\n", video)
 	return &video, nil
 }
 
 func Merge(stream *Stream) error {
+	if stream.V == "" {
+		// Audio-only mode: rename audio file to final name
+		var audio, output string
+		if C.AddBVSuffix {
+			audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a")
+			output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged.m4a")
+		} else {
+			audio = filepath.Join(C.O, stream.Title+".m4a")
+			output = filepath.Join(C.O, stream.Title+"-merged.m4a")
+		}
+		if err := os.Rename(audio, output); err != nil {
+			return err
+		}
+		log.Println(stream.Title, "音频处理完成")
+		return nil
+	}
+
 	var video, audio, output string
 	if C.AddBVSuffix {
 		video = filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp4")
-		audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp3")
+		audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a")
 		output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged.mp4")
 	} else {
 		video = filepath.Join(C.O, stream.Title+".mp4")
-		audio = filepath.Join(C.O, stream.Title+".mp3")
+		audio = filepath.Join(C.O, stream.Title+".m4a")
 		output = filepath.Join(C.O, stream.Title+"-merged.mp4")
 	}
 	cmd := exec.Command("ffmpeg", "-y", "-i", video, "-i", audio, "-c", "copy", output)

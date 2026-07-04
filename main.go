@@ -30,6 +30,9 @@ func init() {
 	flag.BoolVar(&C.AddBVSuffix, "suffix", true, "在下载的视频文件名后添加bv号\n用来解决视频重名问题\n关闭后跳过已下载功能将失效")
 	flag.BoolVar(&C.DisableOverwrite, "no-overwrite", true, "跳过下载过的视频\n注意: 需要先前下载时没有指定suffix为false")
 	flag.BoolVar(&C.InfoOnly, "i", false, "仅查看视频DASH信息, 不下载")
+	flag.StringVar(&C.Resolution, "resolution", "", "分辨率, 可选值: 8k/dolby/4k/1080p/720p/480p/360p, 不设置则自动选择最高")
+	flag.StringVar(&C.Codec, "codec", "", "视频编码, 可选值: av1/hevc/avc, 不设置则按优先级av1>hevc>avc")
+	flag.BoolVar(&C.AudioOnly, "audio-only", false, "仅下载音频")
 	flag.Parse()
 	C.WD, _ = os.Getwd()
 	if runtime.GOOS == "windows" {

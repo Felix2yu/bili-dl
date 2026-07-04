@@ -4,6 +4,7 @@ package api
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/yu1745/bili-dl/C"
 )
@@ -28,6 +27,15 @@ var (
 	cache          sync.Map
 	lastUpdateTime time.Time
 )
+
+type wbiImgResp struct {
+	Data struct {
+		WbiImg struct {
+			ImgURL string `json:"img_url"`
+			SubURL string `json:"sub_url"`
+		} `json:"wbi_img"`
+	} `json:"data"`
+}
 
 func sign(urlStr string) (string, error) {
 	urlObj, err := url.Parse(urlStr)
@@ -146,9 +154,12 @@ func getWbiKeys() (string, string) {
 	if err != nil {
 		return "", ""
 	}
-	json := string(body)
-	imgURL := jsoniter.Get([]byte(json), "data", "wbi_img", "img_url").ToString()
-	subURL := jsoniter.Get([]byte(json), "data", "wbi_img", "sub_url").ToString()
+	var navResp wbiImgResp
+	if err := json.Unmarshal(body, &navResp); err != nil {
+		return "", ""
+	}
+	imgURL := navResp.Data.WbiImg.ImgURL
+	subURL := navResp.Data.WbiImg.SubURL
 
 	// Extract key from URL path: /xxx/yyy/zzzz.png -> yyyy
 	return extractFileKey(imgURL), extractFileKey(subURL)

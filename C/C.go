@@ -14,6 +14,9 @@ var (
 	AddBVSuffix      bool
 	DisableOverwrite bool
 	InfoOnly         bool
+	Resolution       string
+	Codec            string
+	AudioOnly        bool
 )
 
 const (
