@@ -17,7 +17,7 @@ func TestVideoInfo(t *testing.T) {
 	if err := json.Unmarshal(bytes, &resp); err != nil {
 		t.Error(err)
 	}
-	t.Log(resp.Data.Cid)
+	t.Log(resp.Data.Cid.String())
 }
 
 func TestAllVideo(t *testing.T) {

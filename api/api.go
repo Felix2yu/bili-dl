@@ -28,8 +28,8 @@ var client = &http.Client{
 
 type biliVideoInfoResp struct {
 	Data struct {
-		Cid   string `json:"cid"`
-		Title string `json:"title"`
+		Cid   json.Number `json:"cid"`
+		Title string      `json:"title"`
 		Page  struct {
 			Count int `json:"count"`
 		} `json:"page"`
@@ -106,7 +106,7 @@ func ResolveVideo(v *Video) (*Video, error) {
 	if err := json.Unmarshal(info, &resp); err != nil {
 		return nil, err
 	}
-	v.Cid = resp.Data.Cid
+	v.Cid = resp.Data.Cid.String()
 	v.Title = resp.Data.Title
 	return v, nil
 }
@@ -496,7 +496,7 @@ func VideoFromBV(bv string) (*Video, error) {
 	if err := json.Unmarshal(info, &resp); err != nil {
 		return nil, err
 	}
-	video := Video{BV: bv, Cid: resp.Data.Cid, Title: resp.Data.Title}
+	video := Video{BV: bv, Cid: resp.Data.Cid.String(), Title: resp.Data.Title}
 	log.Printf("%+v\n", video)
 	return &video, nil
 }
