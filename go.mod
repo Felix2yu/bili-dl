@@ -1,4 +1,4 @@
-module github.com/yu1745/bili-dl
+module github.com/Felix2yu/bili-dl
 
 go 1.26
 

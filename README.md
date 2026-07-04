@@ -2,7 +2,7 @@
 
 ## 安装
 ``` shell
-go install github.com/yu1745/bili-dl@latest
+go install github.com/Felix2yu/bili-dl@latest
 ```
 
 ## 注意

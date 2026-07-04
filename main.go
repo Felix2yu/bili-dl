@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/yu1745/bili-dl/C"
-	"github.com/yu1745/bili-dl/api"
-	"github.com/yu1745/bili-dl/util"
+	"github.com/Felix2yu/bili-dl/C"
+	"github.com/Felix2yu/bili-dl/api"
+	"github.com/Felix2yu/bili-dl/util"
 )
 
 func init() {

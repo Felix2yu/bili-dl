@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yu1745/bili-dl/C"
+	"github.com/Felix2yu/bili-dl/C"
 )
 
 var client = &http.Client{
