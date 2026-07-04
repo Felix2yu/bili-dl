@@ -31,6 +31,23 @@ func init() {
 	flag.BoolVar(&C.DisableOverwrite, "no-overwrite", true, "跳过下载过的视频\n注意: 需要先前下载时没有指定suffix为false")
 	flag.BoolVar(&C.InfoOnly, "i", false, "仅查看视频DASH信息, 不下载")
 	flag.Parse()
+	args := flag.Args()
+	if len(args) > 0 {
+		bvReg := regexp.MustCompile(`BV[a-zA-Z0-9]+`)
+		var bvList []string
+		for _, arg := range args {
+			if bv := bvReg.FindString(arg); bv != "" {
+				bvList = append(bvList, bv)
+			}
+		}
+		if len(bvList) > 0 {
+			if C.BVs != "" {
+				C.BVs = C.BVs + "," + strings.Join(bvList, ",")
+			} else {
+				C.BVs = strings.Join(bvList, ",")
+			}
+		}
+	}
 	C.WD, _ = os.Getwd()
 	if runtime.GOOS == "windows" {
 		pattern := `^[a-zA-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*$`
