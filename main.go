@@ -18,7 +18,7 @@ import (
 )
 
 func init() {
-	log.SetFlags(log.Lshortfile)
+	log.SetFlags(0)
 	flag.StringVar(&C.Cookie, "c", "", "cookie,cookie的key是SESSDATA,不设置只能下载清晰度小于等于480P的视频")
 	flag.StringVar(&C.UP, "up", "", "up主mid,设置后会下载该up主的所有视频")
 	flag.StringVar(&C.O, "o", ".", "下载路径,可填相对或绝对路径,建议在windows下使用相对路径避免正反斜杠问题")
