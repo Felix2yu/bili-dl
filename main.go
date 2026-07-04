@@ -63,7 +63,7 @@ func init() {
 	} else {
 		C.FFMPEG = true
 	}
-	reg := regexp.MustCompile(`.*_BV[a-zA-Z0-9]+\.mp4`)
+	reg := regexp.MustCompile(`.*_BV[a-zA-Z0-9]+(-merged)?\.(mp4|mkv|mov)`)
 	bvReg := regexp.MustCompile(`BV[a-zA-Z0-9]+`)
 	bvs := make(map[string]struct{})
 	for _, v := range strings.Split(C.BVs, ",") {

@@ -243,6 +243,15 @@ func matchCodec(codecs string, codec string) bool {
 	}
 }
 
+func codecExt(codecs string) string {
+	if strings.HasPrefix(codecs, "av01") {
+		return "mkv"
+	} else if strings.HasPrefix(codecs, "hev") {
+		return "mov"
+	}
+	return "mp4"
+}
+
 type Stream struct {
 	V       string
 	A       string
@@ -435,14 +444,15 @@ func DV(stream *Stream) error {
 	if err != nil {
 		return err
 	}
+	ext := codecExt(stream.VCodec)
 	var file *os.File
 	if C.AddBVSuffix {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp4"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
 		if err != nil {
 			return err
 		}
 	} else {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+".mp4"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"."+ext), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
 		if err != nil {
 			return err
 		}
@@ -519,15 +529,16 @@ func Merge(stream *Stream) error {
 		return nil
 	}
 
+	ext := codecExt(stream.VCodec)
 	var video, audio, output string
 	if C.AddBVSuffix {
-		video = filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp4")
+		video = filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext)
 		audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a")
-		output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged.mp4")
+		output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged."+ext)
 	} else {
-		video = filepath.Join(C.O, stream.Title+".mp4")
+		video = filepath.Join(C.O, stream.Title+"."+ext)
 		audio = filepath.Join(C.O, stream.Title+".m4a")
-		output = filepath.Join(C.O, stream.Title+"-merged.mp4")
+		output = filepath.Join(C.O, stream.Title+"-merged."+ext)
 	}
 	cmd := exec.Command("ffmpeg", "-y", "-i", video, "-i", audio, "-c", "copy", output)
 	if err := cmd.Run(); err != nil {
@@ -541,11 +552,11 @@ func Merge(stream *Stream) error {
 			return err
 		}
 		if C.AddBVSuffix {
-			if err := os.Rename(output, filepath.Join(C.O, stream.Title+"_"+stream.BV+".mp4")); err != nil {
+			if err := os.Rename(output, filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext)); err != nil {
 				return err
 			}
 		} else {
-			if err := os.Rename(output, filepath.Join(C.O, stream.Title+".mp4")); err != nil {
+			if err := os.Rename(output, filepath.Join(C.O, stream.Title+"."+ext)); err != nil {
 				return err
 			}
 		}
