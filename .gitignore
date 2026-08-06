@@ -2,6 +2,9 @@
 bili-dl
 bili-dl-*
 
+# Tooling
+.mimocode/
+
 # IDE
 .idea/
 .vscode/
