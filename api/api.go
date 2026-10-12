@@ -434,8 +434,28 @@ func Dl(stream *Stream) error {
 	return nil
 }
 
-func DV(stream *Stream) error {
-	req, err := http.NewRequest("GET", stream.V, nil)
+// 下载失败时的最大尝试次数（应对 CDN 偶发断流）
+const downloadAttempts = 3
+
+// downloadFile 下载单个资源到指定路径，失败时自动重试
+func downloadFile(rawURL string, path string) error {
+	var lastErr error
+	for i := 1; i <= downloadAttempts; i++ {
+		if i > 1 {
+			// 指数退避：1s、2s
+			time.Sleep(time.Duration(1<<uint(i-2)) * time.Second)
+			log.Printf("重试下载 (%d/%d): %v", i, downloadAttempts, path)
+		}
+		if lastErr = downloadOnce(rawURL, path); lastErr == nil {
+			return nil
+		}
+		log.Printf("下载失败 (%d/%d): %v", i, downloadAttempts, lastErr)
+	}
+	return lastErr
+}
+
+func downloadOnce(rawURL string, path string) error {
+	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return err
 	}
@@ -444,57 +464,40 @@ func DV(stream *Stream) error {
 	if err != nil {
 		return err
 	}
-	ext := codecExt(stream.VCodec)
-	var file *os.File
-	if C.AddBVSuffix {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	} else {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"."+ext), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
-		if err != nil {
-			return err
-		}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+	if err != nil {
+		return err
 	}
 	defer file.Close()
-	_ = file.Truncate(0)
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
+	if _, err = io.Copy(file, resp.Body); err != nil {
 		return err
 	}
 	return nil
 }
 
-func DA(stream *Stream) error {
-	req, err := http.NewRequest("GET", stream.A, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Referer", "https://www.bilibili.com")
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	var file *os.File
+func DV(stream *Stream) error {
+	ext := codecExt(stream.VCodec)
+	var name string
 	if C.AddBVSuffix {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
-		if err != nil {
-			return err
-		}
+		name = stream.Title + "_" + stream.BV + "." + ext
 	} else {
-		file, err = os.OpenFile(filepath.Join(C.O, stream.Title+".m4a"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
-		if err != nil {
-			return err
-		}
+		name = stream.Title + "." + ext
 	}
-	defer file.Close()
-	_ = file.Truncate(0)
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return err
+	return downloadFile(stream.V, filepath.Join(C.O, name))
+}
+
+func DA(stream *Stream) error {
+	var name string
+	if C.AddBVSuffix {
+		name = stream.Title + "_" + stream.BV + ".m4a"
+	} else {
+		name = stream.Title + ".m4a"
 	}
-	return nil
+	return downloadFile(stream.A, filepath.Join(C.O, name))
 }
 
 func VideoFromBV(bv string) (*Video, error) {
