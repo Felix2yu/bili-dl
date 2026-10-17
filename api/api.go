@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/C"
+	"github.com/Felix2yu/bili-dl/c"
 )
 
 var client = &http.Client{
@@ -132,8 +132,8 @@ func videoFromUP(mid string, pn int) (rt []byte, err error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
 	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if C.Cookie != "" {
-		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: C.Cookie})
+	if c.Cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 	}
 
 	res, err := client.Do(req)
@@ -189,8 +189,8 @@ func AllVideo(mid string) ([]Video, error) {
 		for _, v := range pageResp.Data.List.VList {
 			if v.BV != "" {
 				video := Video{BV: v.BV}
-				videoJson, _ := json.Marshal(video)
-				println(string(videoJson))
+				videoJSON, _ := json.Marshal(video)
+				println(string(videoJSON))
 				videos = append(videos, video)
 			}
 		}
@@ -283,7 +283,7 @@ func GetStream(v Video) (*Stream, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
 	req.Header.Set("Referer", "https://www.bilibili.com/")
 
-	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: C.Cookie})
+	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -304,7 +304,7 @@ func GetStream(v Video) (*Stream, error) {
 	var videoURL, vCodec string
 	var vWidth, vHeight float64
 
-	if !C.AudioOnly {
+	if !c.AudioOnly {
 		videoStreams := dashResp.Data.Dash.Video
 		if len(videoStreams) == 0 {
 			return nil, fmt.Errorf("no video streams available")
@@ -313,16 +313,16 @@ func GetStream(v Video) (*Stream, error) {
 		// Filter by resolution and codec
 		var filtered []dashStream
 		for _, s := range videoStreams {
-			if !matchResolution(s.ID, s.Width, C.Resolution) {
+			if !matchResolution(s.ID, s.Width, c.Resolution) {
 				continue
 			}
-			if !matchCodec(s.Codecs, C.Codec) {
+			if !matchCodec(s.Codecs, c.Codec) {
 				continue
 			}
 			filtered = append(filtered, s)
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", C.Resolution, C.Codec)
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, c.Codec)
 		}
 
 		// Select best: codec priority (av1>hevc>avc), then width desc
@@ -374,7 +374,7 @@ func PrintDASHInfo(v Video) error {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
 	req.Header.Set("Referer", "https://www.bilibili.com/")
-	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: C.Cookie})
+	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -482,22 +482,22 @@ func downloadOnce(rawURL string, path string) error {
 func DV(stream *Stream) error {
 	ext := codecExt(stream.VCodec)
 	var name string
-	if C.AddBVSuffix {
+	if c.AddBVSuffix {
 		name = stream.Title + "_" + stream.BV + "." + ext
 	} else {
 		name = stream.Title + "." + ext
 	}
-	return downloadFile(stream.V, filepath.Join(C.O, name))
+	return downloadFile(stream.V, filepath.Join(c.O, name))
 }
 
 func DA(stream *Stream) error {
 	var name string
-	if C.AddBVSuffix {
+	if c.AddBVSuffix {
 		name = stream.Title + "_" + stream.BV + ".m4a"
 	} else {
 		name = stream.Title + ".m4a"
 	}
-	return downloadFile(stream.A, filepath.Join(C.O, name))
+	return downloadFile(stream.A, filepath.Join(c.O, name))
 }
 
 func VideoFromBV(bv string) (*Video, error) {
@@ -518,12 +518,12 @@ func Merge(stream *Stream) error {
 	if stream.V == "" {
 		// Audio-only mode: rename audio file to final name
 		var audio, output string
-		if C.AddBVSuffix {
-			audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a")
-			output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged.m4a")
+		if c.AddBVSuffix {
+			audio = filepath.Join(c.O, stream.Title+"_"+stream.BV+".m4a")
+			output = filepath.Join(c.O, stream.Title+"_"+stream.BV+"-merged.m4a")
 		} else {
-			audio = filepath.Join(C.O, stream.Title+".m4a")
-			output = filepath.Join(C.O, stream.Title+"-merged.m4a")
+			audio = filepath.Join(c.O, stream.Title+".m4a")
+			output = filepath.Join(c.O, stream.Title+"-merged.m4a")
 		}
 		if err := os.Rename(audio, output); err != nil {
 			return err
@@ -534,32 +534,32 @@ func Merge(stream *Stream) error {
 
 	ext := codecExt(stream.VCodec)
 	var video, audio, output string
-	if C.AddBVSuffix {
-		video = filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext)
-		audio = filepath.Join(C.O, stream.Title+"_"+stream.BV+".m4a")
-		output = filepath.Join(C.O, stream.Title+"_"+stream.BV+"-merged."+ext)
+	if c.AddBVSuffix {
+		video = filepath.Join(c.O, stream.Title+"_"+stream.BV+"."+ext)
+		audio = filepath.Join(c.O, stream.Title+"_"+stream.BV+".m4a")
+		output = filepath.Join(c.O, stream.Title+"_"+stream.BV+"-merged."+ext)
 	} else {
-		video = filepath.Join(C.O, stream.Title+"."+ext)
-		audio = filepath.Join(C.O, stream.Title+".m4a")
-		output = filepath.Join(C.O, stream.Title+"-merged."+ext)
+		video = filepath.Join(c.O, stream.Title+"."+ext)
+		audio = filepath.Join(c.O, stream.Title+".m4a")
+		output = filepath.Join(c.O, stream.Title+"-merged."+ext)
 	}
 	cmd := exec.Command("ffmpeg", "-y", "-i", video, "-i", audio, "-c", "copy", output)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg merge failed: %w", err)
 	}
-	if C.Delete {
+	if c.Delete {
 		if err := os.Remove(video); err != nil {
 			return err
 		}
 		if err := os.Remove(audio); err != nil {
 			return err
 		}
-		if C.AddBVSuffix {
-			if err := os.Rename(output, filepath.Join(C.O, stream.Title+"_"+stream.BV+"."+ext)); err != nil {
+		if c.AddBVSuffix {
+			if err := os.Rename(output, filepath.Join(c.O, stream.Title+"_"+stream.BV+"."+ext)); err != nil {
 				return err
 			}
 		} else {
-			if err := os.Rename(output, filepath.Join(C.O, stream.Title+"."+ext)); err != nil {
+			if err := os.Rename(output, filepath.Join(c.O, stream.Title+"."+ext)); err != nil {
 				return err
 			}
 		}

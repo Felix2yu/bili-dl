@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/C"
+	"github.com/Felix2yu/bili-dl/c"
 )
 
 var (
@@ -53,8 +53,8 @@ func sign(urlStr string) (string, error) {
 		query.Set(k, v)
 	}
 	urlObj.RawQuery = query.Encode()
-	newUrlStr := urlObj.String()
-	return newUrlStr, nil
+	newURLStr := urlObj.String()
+	return newURLStr, nil
 }
 
 func encWbi(params map[string]string, imgKey, subKey string) map[string]string {
@@ -141,8 +141,8 @@ func getWbiKeys() (string, string) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
 	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if C.Cookie != "" {
-		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: C.Cookie})
+	if c.Cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 	}
 
 	resp, err := client.Do(req)
