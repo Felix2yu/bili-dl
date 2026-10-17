@@ -8,12 +8,12 @@ import (
 
 func TestWbi(t *testing.T) {
 	urlStr := "https://api.bilibili.com/x/space/wbi/acc/info?mid=1850091"
-	newUrlStr, err := sign(urlStr)
+	newURLStr, err := sign(urlStr)
 	if err != nil {
 		t.Errorf("Error: %s", err)
 		return
 	}
-	req, err := http.NewRequest("GET", newUrlStr, nil)
+	req, err := http.NewRequest("GET", newURLStr, nil)
 	if err != nil {
 		t.Errorf("Error: %s", err)
 		return

@@ -1,4 +1,4 @@
-package C
+package c
 
 var (
 	Cookie           string
