@@ -253,8 +253,8 @@ func codecExt(codecs string) string {
 }
 
 type Stream struct {
-	V       string
-	A       string
+	V string
+	A string
 	Video
 	VCodec  string
 	VWidth  float64

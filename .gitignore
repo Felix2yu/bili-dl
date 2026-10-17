@@ -28,3 +28,6 @@ Thumbs.db
 .continue/
 .windsurf/
 .aider*
+
+# 构建产物
+/bin/

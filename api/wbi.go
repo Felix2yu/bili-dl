@@ -1,4 +1,4 @@
-//copy from https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/misc/sign/wbi.md#Golang and modified
+// copy from https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/misc/sign/wbi.md#Golang and modified
 package api
 
 import (
