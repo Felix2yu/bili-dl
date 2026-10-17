@@ -77,3 +77,7 @@ bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -audio-only
 # 仅查看DASH信息(不下载)
 bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -i
 ```
+
+## 许可证
+
+本项目以 [MIT](LICENSE) 发布，© 2026 Felix2yu。
