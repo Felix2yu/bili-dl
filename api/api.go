@@ -691,6 +691,22 @@ func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
 	}
 	defer resp.Body.Close()
 
+	// 本地文件已完整时，CDN 的签名 URL 常对 Range 直接回 416（请求区间超出文件末尾）。
+	// 有 Content-Range 且本地已覆盖完整长度就当作完成；否则删掉残件从头重下。
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && existing > 0 {
+		if total := contentRangeTotal(resp.Header.Get("Content-Range")); total > 0 && existing >= total {
+			log.Printf("本地文件已完整（%d bytes），跳过下载：%s", existing, filepath.Base(path))
+			emitProgress(progressEvent{
+				Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind,
+				Current: existing, Total: existing, Percent: 100,
+			})
+			return nil
+		}
+		_ = resp.Body.Close()
+		_ = os.Remove(path)
+		return downloadOnceWith(rawURL, path, meta)
+	}
+
 	// 206 Partial Content：从断点续写；其它状态一律从头覆盖。
 	appendMode := resp.StatusCode == http.StatusPartialContent && existing > 0
 	if resp.StatusCode != http.StatusOK && !appendMode {
@@ -728,6 +744,23 @@ func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
 		log.Printf("续传完成：%s (+%d bytes)", filepath.Base(path), written)
 	}
 	return nil
+}
+
+// contentRangeTotal 从 Content-Range（"bytes START-END/TOTAL" 或 "bytes */TOTAL"）中取总长度。
+func contentRangeTotal(header string) int64 {
+	const prefix = "bytes "
+	if !strings.HasPrefix(header, prefix) {
+		return 0
+	}
+	slash := strings.LastIndexByte(header, '/')
+	if slash < 0 {
+		return 0
+	}
+	total, err := strconv.ParseInt(strings.TrimSpace(header[slash+1:]), 10, 64)
+	if err != nil || total <= 0 {
+		return 0
+	}
+	return total
 }
 
 func ensureDir(path string) error {
