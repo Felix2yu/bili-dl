@@ -11,17 +11,19 @@ import (
 
 var testVideo = Video{BV: "BV1uP4y1S7ps", Cid: "873198432", Title: "会有人不喜欢玛奇玛？硬撑罢了！"}
 
-// requireIntegration 用于跳过会真实下载大文件的集成测试。
-// 云端/共享 IP 访问 B 站 CDN 时容易被风控（HTTP 412/567），
+// requireIntegration 用于跳过会真实访问 B 站接口/CDN 的集成测试。
+// 云端/共享 IP 访问 B 站时容易被风控（返回 412/567 或 HTML 风控页），
 // CI 中无意义地重试只会造成误报，需要时用 BILI_INTEGRATION=1 显式启用。
 func requireIntegration(t *testing.T) {
 	t.Helper()
 	if os.Getenv("BILI_INTEGRATION") != "1" {
-		t.Skip("跳过真实下载测试；设置 BILI_INTEGRATION=1 启用")
+		t.Skip("跳过真实网络集成测试；设置 BILI_INTEGRATION=1 启用")
 	}
 }
 
 func TestVideoInfo(t *testing.T) {
+	requireIntegration(t)
+
 	bytes, err := videoInfo("BV1uP4y1S7ps")
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +36,9 @@ func TestVideoInfo(t *testing.T) {
 }
 
 func TestAllVideo(t *testing.T) {
-	/*videos*/ _, err := AllVideo("2223018")
+	requireIntegration(t)
+
+	_, err := AllVideo("2223018")
 	if err != nil {
 		t.Log(err)
 	}
@@ -42,6 +46,8 @@ func TestAllVideo(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
+	requireIntegration(t)
+
 	stream, err := GetStream(testVideo)
 	if err != nil {
 		t.Fatal(err)

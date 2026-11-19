@@ -7,6 +7,8 @@ import (
 )
 
 func TestWbi(t *testing.T) {
+	requireIntegration(t)
+
 	urlStr := "https://api.bilibili.com/x/space/wbi/acc/info?mid=1850091"
 	newURLStr, err := sign(urlStr)
 	if err != nil {
