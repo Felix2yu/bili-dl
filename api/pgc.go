@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -165,6 +166,40 @@ type ugcSeason struct {
 		Title    string             `json:"title"`
 		Episodes []ugcSeasonEpisode `json:"episodes"`
 	} `json:"sections"`
+}
+
+// ExpandPages 把投稿按分 P 展开成下载目标。batch 为 true 时取全部分 P，
+// 否则只取 startPage；startPage 越界时回退 P1 并记录告警。
+// 页码选择规则与 CLI 的 --batch/-p 完全一致，供嵌入方复用。
+func ExpandPages(v *Video, startPage int, batch bool) []Video {
+	if v == nil {
+		return nil
+	}
+	if startPage < 1 {
+		startPage = 1
+	}
+	if !batch || len(v.Pages) <= 1 {
+		if startPage > len(v.Pages) {
+			log.Printf("分 P 页码 %d 超出范围（共 %d P），改为 P1", startPage, len(v.Pages))
+			startPage = 1
+		}
+		one, err := VideoForPage(v, startPage)
+		if err != nil {
+			log.Printf("选择分 P 失败: %v", err)
+			return nil
+		}
+		return []Video{one}
+	}
+	var out []Video
+	for p := 1; p <= len(v.Pages); p++ {
+		one, err := VideoForPage(v, p)
+		if err != nil {
+			log.Printf("选择分 P 失败: %v", err)
+			continue
+		}
+		out = append(out, one)
+	}
+	return out
 }
 
 // ExpandUGCSeason 把视频所属合集展开成多个下载目标。

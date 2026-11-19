@@ -215,33 +215,11 @@ func expandVideo(v *api.Video, startPage int) []api.Video {
 	return expandPages(v, startPage)
 }
 
-// expandPages 按 --batch 展开全部分 P；否则只取起始页（默认 P1）。
+// expandPages 展开分 P，页码与 --batch 规则由 api.ExpandPages 统一实现。
 func expandPages(v *api.Video, startPage int) []api.Video {
-	if startPage < 1 {
-		startPage = 1
-	}
-	if !c.Batch || len(v.Pages) <= 1 {
-		if startPage > len(v.Pages) {
-			log.Printf("分 P 页码 %d 超出范围（共 %d P），改为 P1", startPage, len(v.Pages))
-			startPage = 1
-		}
-		one, err := api.VideoForPage(v, startPage)
-		if err != nil {
-			log.Printf("选择分 P 失败: %v", err)
-			failed.Add(1)
-			return nil
-		}
-		return []api.Video{one}
-	}
-	var out []api.Video
-	for p := 1; p <= len(v.Pages); p++ {
-		one, err := api.VideoForPage(v, p)
-		if err != nil {
-			log.Printf("选择分 P 失败: %v", err)
-			failed.Add(1)
-			continue
-		}
-		out = append(out, one)
+	out := api.ExpandPages(v, startPage, c.Batch)
+	if len(out) == 0 {
+		failed.Add(1)
 	}
 	return out
 }

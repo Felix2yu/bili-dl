@@ -112,7 +112,7 @@ func downloadDanmaku(stream *Stream) error {
 	if err := os.WriteFile(dst, []byte(ass), 0o666); err != nil {
 		return err
 	}
-	emitProgress(progressEvent{Event: "done", BV: stream.BV, Page: stream.ActivePage, Kind: "danmaku", Current: int64(len(body)), Message: filepath.Base(dst)})
+	emitProgress(ProgressEvent{Event: "done", BV: stream.BV, Page: stream.ActivePage, Kind: "danmaku", Current: int64(len(body)), Message: filepath.Base(dst)})
 	return nil
 }
 
@@ -259,7 +259,7 @@ func downloadSubtitles(stream *Stream) error {
 		if err := os.WriteFile(dst, []byte(srt), 0o666); err != nil {
 			continue
 		}
-		emitProgress(progressEvent{Event: "done", BV: stream.BV, Page: stream.ActivePage, Kind: "subtitle", Current: int64(len(srt)), Message: filepath.Base(dst)})
+		emitProgress(ProgressEvent{Event: "done", BV: stream.BV, Page: stream.ActivePage, Kind: "subtitle", Current: int64(len(srt)), Message: filepath.Base(dst)})
 		log.Printf("字幕已保存 [%s]: %s", stream.BV, sub.LanDoc)
 	}
 	return nil

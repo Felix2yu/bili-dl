@@ -456,14 +456,8 @@ func GetStream(v Video) (*Stream, error) {
 			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, c.Codec)
 		}
 
-		// Select best: codec priority (av1>hevc>avc), then width desc
-		bestIdx := 0
-		for i := 1; i < len(filtered); i++ {
-			ci, cj := codec2i(filtered[i].Codecs), codec2i(filtered[bestIdx].Codecs)
-			if ci > cj || (ci == cj && filtered[i].Width > filtered[bestIdx].Width) {
-				bestIdx = i
-			}
-		}
+		// -q 指定画质 id 时优先精确命中；未指定或无命中则按编码优先级 + 分辨率择优。
+		bestIdx := selectVideoStream(filtered, c.VideoQuality)
 		videoURL = filtered[bestIdx].BaseURL
 		vCodec = filtered[bestIdx].Codecs
 		vWidth = filtered[bestIdx].Width
@@ -501,6 +495,32 @@ func pickAudio(streams []dashStream, wanted int) dashStream {
 	for _, s := range streams[1:] {
 		if s.Bandwidth > best.Bandwidth {
 			best = s
+		}
+	}
+	return best
+}
+
+// selectVideoStream 返回 filtered 中最优流的下标。wanted > 0 时先在指定画质 id 内
+// 按编码优先级（av1>hevc>avc）取优；id 未命中则退回全局同规则择优。
+func selectVideoStream(streams []dashStream, wanted int) int {
+	best := -1
+	if wanted > 0 {
+		for i, s := range streams {
+			if int(s.ID) != wanted {
+				continue
+			}
+			if best < 0 || codec2i(s.Codecs) > codec2i(streams[best].Codecs) {
+				best = i
+			}
+		}
+	}
+	if best < 0 {
+		best = 0
+		for i := 1; i < len(streams); i++ {
+			ci, cj := codec2i(streams[i].Codecs), codec2i(streams[best].Codecs)
+			if ci > cj || (ci == cj && streams[i].Width > streams[best].Width) {
+				best = i
+			}
 		}
 	}
 	return best
@@ -628,7 +648,7 @@ func downloadFile(rawURL string, path string) error {
 }
 
 func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
-	emitProgress(progressEvent{Event: "start", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
+	emitProgress(ProgressEvent{Event: "start", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
 	var lastErr error
 	for i := 1; i <= downloadAttempts; i++ {
 		if i > 1 {
@@ -646,7 +666,7 @@ func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
 			log.Printf("重试下载 (%d/%d): %v", i, downloadAttempts, path)
 		}
 		if lastErr = downloadOnceWith(rawURL, path, meta); lastErr == nil {
-			emitProgress(progressEvent{Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
+			emitProgress(ProgressEvent{Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
 			return nil
 		}
 		if c.Ctx != nil && c.Ctx.Err() != nil {
@@ -654,7 +674,7 @@ func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
 		}
 		log.Printf("下载失败 (%d/%d): %v", i, downloadAttempts, lastErr)
 	}
-	emitProgress(progressEvent{Event: "error", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: fmt.Sprint(lastErr)})
+	emitProgress(ProgressEvent{Event: "error", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: fmt.Sprint(lastErr)})
 	return lastErr
 }
 
@@ -696,7 +716,7 @@ func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
 	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && existing > 0 {
 		if total := contentRangeTotal(resp.Header.Get("Content-Range")); total > 0 && existing >= total {
 			log.Printf("本地文件已完整（%d bytes），跳过下载：%s", existing, filepath.Base(path))
-			emitProgress(progressEvent{
+			emitProgress(ProgressEvent{
 				Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind,
 				Current: existing, Total: existing, Percent: 100,
 			})
@@ -732,8 +752,8 @@ func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
 		total += existing
 	}
 	sink := io.Writer(file)
-	if c.ProgressJSON {
-		ev := progressEvent{BV: meta.BV, Page: meta.Page, Kind: meta.Kind}
+	if progressEnabled() {
+		ev := ProgressEvent{BV: meta.BV, Page: meta.Page, Kind: meta.Kind}
 		sink = newProgressWriter(file, ev, total)
 	}
 	written, err := io.Copy(sink, body)

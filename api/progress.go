@@ -11,9 +11,9 @@ import (
 	"github.com/Felix2yu/bili-dl/c"
 )
 
-// NDJSON 进度事件。stdout 专用于机器可读输出；日志一律走 stderr。
+// ProgressEvent 是一次下载动作的状态变化，与 NDJSON 事件字段一一对应。
 // 事件类型：start / progress / done / error。
-type progressEvent struct {
+type ProgressEvent struct {
 	Event     string  `json:"event"`
 	BV        string  `json:"bv"`
 	Page      int     `json:"page,omitempty"`
@@ -26,26 +26,56 @@ type progressEvent struct {
 	Timestamp int64   `json:"ts"` // 毫秒时间戳
 }
 
-var progressMu sync.Mutex
+var (
+	progressMu   sync.Mutex
+	progressHook func(ProgressEvent)
+)
 
-func emitProgress(ev progressEvent) {
+// SetProgressHook 注册进程内进度回调，供把 bili-dl 当库嵌入的调用方使用。
+// 传 nil 取消注册。与 --progress-json 的 NDJSON 输出互不影响，可同时生效。
+func SetProgressHook(fn func(ProgressEvent)) {
+	progressMu.Lock()
+	defer progressMu.Unlock()
+	progressHook = fn
+}
+
+// progressEnabled 表示有人在观测字节级进度：NDJSON 输出或进程内 hook。
+func progressEnabled() bool {
+	progressMu.Lock()
+	defer progressMu.Unlock()
+	return c.ProgressJSON || progressHook != nil
+}
+
+func emitProgress(ev ProgressEvent) {
+	ev.Timestamp = time.Now().UnixMilli()
+
+	progressMu.Lock()
+	hook := progressHook
+	progressMu.Unlock()
+	if hook != nil {
+		hook(ev)
+	}
+
 	if !c.ProgressJSON {
 		return
 	}
-	ev.Timestamp = time.Now().UnixMilli()
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return
 	}
+	w := c.ProgressWriter
+	if w == nil {
+		w = os.Stdout
+	}
 	progressMu.Lock()
 	defer progressMu.Unlock()
-	fmt.Fprintln(os.Stdout, string(b))
+	fmt.Fprintln(w, string(b))
 }
 
 // progressWriter 包装 io.Writer，在 Copy 过程中按节流输出进度事件。
 type progressWriter struct {
 	w        io.Writer
-	ev       progressEvent
+	ev       ProgressEvent
 	total    int64
 	written  int64
 	start    time.Time
@@ -53,7 +83,7 @@ type progressWriter struct {
 	lastPct  int
 }
 
-func newProgressWriter(w io.Writer, ev progressEvent, total int64) *progressWriter {
+func newProgressWriter(w io.Writer, ev ProgressEvent, total int64) *progressWriter {
 	now := time.Now()
 	return &progressWriter{w: w, ev: ev, total: total, start: now, lastEmit: now}
 }

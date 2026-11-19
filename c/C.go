@@ -1,6 +1,9 @@
 package c
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // 全局配置。api 包直接读取这些变量；由 args.go 的 Parse 统一填充。
 // 保留 bili-dl 原生字段名（Cookie/O/UP/...），新增 yutto 兼容字段。
@@ -55,12 +58,13 @@ var (
 	Collection bool   // --collection：把视频所属合集整体展开
 
 	// 运行控制
-	NoProgress   bool
-	NoColor      bool
-	ProgressJSON bool            // --progress-json：向 stdout 输出 NDJSON 进度事件
-	RateLimit    string          // -rate：限速，如 "2m" / "500k"
-	RateBytes    int64           // 解析后的每秒字节上限，0 表示不限速
-	Ctx          context.Context // 由 main 注入，贯穿下载与合并，响应 SIGTERM
+	NoProgress     bool
+	NoColor        bool
+	ProgressJSON   bool            // --progress-json：向 stdout 输出 NDJSON 进度事件
+	ProgressWriter io.Writer       // NDJSON 的落点，nil 表示 os.Stdout；嵌入方需要接管输出时设置
+	RateLimit      string          // -rate：限速，如 "2m" / "500k"
+	RateBytes      int64           // 解析后的每秒字节上限，0 表示不限速
+	Ctx            context.Context // 由 main 注入，贯穿下载与合并，响应 SIGTERM
 )
 
 func Defaults() {
