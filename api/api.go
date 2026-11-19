@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/bili-dl/util"
 )
 
 var client = &http.Client{
@@ -26,22 +28,69 @@ var client = &http.Client{
 	},
 }
 
+const defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
+
+// newAPIRequest 统一构造 B 站 API 请求：带 context、UA、Referer，
+// 仅在 SESSDATA 非空时才写入 cookie（避免发出 Value="" 的畸形 cookie）。
+func newAPIRequest(rawURL string) (*http.Request, error) {
+	ctx := c.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", defaultUA)
+	req.Header.Set("Referer", "https://www.bilibili.com/")
+	if c.Cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
+	}
+	return req, nil
+}
+
+type biliVideoPage struct {
+	Page     int         `json:"page"`
+	Cid      json.Number `json:"cid"`
+	Part     string      `json:"part"`
+	Duration int         `json:"duration"`
+}
+
 type biliVideoInfoResp struct {
+	Code int `json:"code"`
 	Data struct {
+		BVID  string      `json:"bvid"`
 		Cid   json.Number `json:"cid"`
 		Title string      `json:"title"`
-		Page  struct {
+		Pic   string      `json:"pic"`
+		Owner struct {
+			MID  int64  `json:"mid"`
+			Name string `json:"name"`
+		} `json:"owner"`
+		Page struct {
 			Count int `json:"count"`
 		} `json:"page"`
+		Pages     []biliVideoPage `json:"pages"`
+		UGCSeason *ugcSeason      `json:"ugc_season"`
 	} `json:"data"`
 }
 
+// dashInfo 是 playurl 响应里的 dash 载荷（UGC 在 data.dash，PGC 在 result.dash）。
+type dashInfo struct {
+	Video []dashStream `json:"video"`
+	Audio []dashStream `json:"audio"`
+	Dolby struct {
+		Audio []dashStream `json:"audio"`
+	} `json:"dolby"`
+	Flac struct {
+		Audio []dashStream `json:"audio"`
+	} `json:"flac"`
+}
+
 type biliDashResp struct {
+	Code int `json:"code"`
 	Data struct {
-		Dash struct {
-			Video []dashStream `json:"video"`
-			Audio []dashStream `json:"audio"`
-		} `json:"dash"`
+		Dash dashInfo `json:"dash"`
 	} `json:"data"`
 }
 
@@ -74,8 +123,7 @@ func videoInfo(bv string) ([]byte, error) {
 	query.Add("bvid", bv)
 	parse.RawQuery = query.Encode()
 	url = parse.String()
-	method := "GET"
-	req, err := http.NewRequest(method, url, nil)
+	req, err := newAPIRequest(url)
 
 	if err != nil {
 		log.Println(err)
@@ -106,9 +154,48 @@ func ResolveVideo(v *Video) (*Video, error) {
 	if err := json.Unmarshal(info, &resp); err != nil {
 		return nil, err
 	}
+	return applyVideoInfo(v, &resp)
+}
+
+// applyVideoInfo 把投稿信息填入 Video：owner、封面、全部分 P。
+// 单 P 时 Pages 也有一条记录，供调用方统一处理；ActivePage 保持调用方传入值。
+func applyVideoInfo(v *Video, resp *biliVideoInfoResp) (*Video, error) {
+	if resp.Code != 0 {
+		return nil, fmt.Errorf("B站返回错误 code=%d", resp.Code)
+	}
 	v.Cid = resp.Data.Cid.String()
 	v.Title = resp.Data.Title
+	v.Owner = resp.Data.Owner.Name
+	v.OwnerM = resp.Data.Owner.MID
+	v.Pic = resp.Data.Pic
+	v.UGCSeason = resp.Data.UGCSeason
+	if v.BV == "" {
+		v.BV = resp.Data.BVID
+	}
+	if len(resp.Data.Pages) > 0 {
+		v.Pages = resp.Data.Pages
+	} else {
+		v.Pages = []biliVideoPage{{
+			Page: 1, Cid: resp.Data.Cid, Part: resp.Data.Title,
+		}}
+	}
 	return v, nil
+}
+
+// VideoForPage 返回某个分 P 对应的下载目标（复制一份， cid/title 指向该 P）。
+// 保留 Pages 供文件名模板生成分 P 标签；用 ActivePage 标识当前 P，调用方据此避免重复展开。
+// page 为 1-based；越界时返回错误。
+func VideoForPage(v *Video, page int) (Video, error) {
+	out := *v
+	out.ActivePage = page
+	if page <= 0 || page > len(v.Pages) {
+		return out, fmt.Errorf("分 P 页码 %d 超出范围（共 %d P）", page, len(v.Pages))
+	}
+	p := v.Pages[page-1]
+	out.Cid = p.Cid.String()
+	// 主标题保持视频总标题；part 由模板从 Pages[page-1] 取，
+	// 这样多 P 文件名形如 "总标题 - 01 - 分P名"。
+	return out, nil
 }
 
 func videoFromUP(mid string, pn int) (rt []byte, err error) {
@@ -124,16 +211,10 @@ func videoFromUP(mid string, pn int) (rt []byte, err error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
-
+	req, err := newAPIRequest(url)
 	if err != nil {
 		log.Println(err)
 		return nil, err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
-	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if c.Cookie != "" {
-		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 	}
 
 	res, err := client.Do(req)
@@ -150,21 +231,35 @@ func videoFromUP(mid string, pn int) (rt []byte, err error) {
 }
 
 type Video struct {
-	Title string `json:"title,omitempty"`
-	BV    string `json:"bv,omitempty"`
-	Cid   string `json:"cid,omitempty"`
+	Title  string `json:"title,omitempty"`
+	BV     string `json:"bv,omitempty"`
+	Cid    string `json:"cid,omitempty"`
+	Owner  string `json:"owner,omitempty"`
+	OwnerM int64  `json:"owner_mid,omitempty"`
+	Pic    string `json:"pic,omitempty"`
+	// Pages 是投稿视频的全部分 P。单个视频（未展开）时为空，
+	// 此时用上面的 Cid/Title 表示当前下载目标。
+	Pages []biliVideoPage `json:"pages,omitempty"`
+	// ActivePage 是本次要下载的分 P（1-based），0 表示单 P / 未指定。
+	ActivePage int `json:"active_page,omitempty"`
+	// PGC 标记番剧/剧集（走 pgc/player/web/playurl，响应包在 result 而非 data）。
+	PGC  bool   `json:"pgc,omitempty"`
+	EpID string `json:"ep_id,omitempty"`
+	// UGCSeason 是投稿所属合集（仅主视频解析时填充，用于展开）。
+	UGCSeason *ugcSeason `json:"-"`
 }
 
 func AllVideo(mid string) ([]Video, error) {
-	bytes, err := videoFromUP(mid, 1)
+	// 第一页只请求一次：既拿总数，也复用它的列表，避免原来的重复请求。
+	first, err := videoFromUP(mid, 1)
 	if err != nil {
 		return nil, err
 	}
-	var resp biliVlistResp
-	if err := json.Unmarshal(bytes, &resp); err != nil {
+	var firstResp biliVlistResp
+	if err := json.Unmarshal(first, &firstResp); err != nil {
 		return nil, err
 	}
-	count := resp.Data.Page.Count
+	count := firstResp.Data.Page.Count
 	if count == 0 {
 		count = 1
 	}
@@ -174,26 +269,34 @@ func AllVideo(mid string) ([]Video, error) {
 	}
 
 	var videos []Video
-	for i := 1; i <= pn; i++ {
-		time.Sleep(time.Second)
-		bytes, err := videoFromUP(mid, i)
-		if err != nil {
-			log.Printf("Failed to fetch page %d: %v, continuing...", i, err)
-			continue
-		}
+	collect := func(raw []byte) {
 		var pageResp biliVlistResp
-		if err := json.Unmarshal(bytes, &pageResp); err != nil {
-			log.Printf("Failed to parse page %d: %v, continuing...", i, err)
-			continue
+		if err := json.Unmarshal(raw, &pageResp); err != nil {
+			log.Printf("解析 UP 主列表失败: %v", err)
+			return
 		}
 		for _, v := range pageResp.Data.List.VList {
 			if v.BV != "" {
-				video := Video{BV: v.BV}
-				videoJSON, _ := json.Marshal(video)
-				println(string(videoJSON))
-				videos = append(videos, video)
+				videos = append(videos, Video{BV: v.BV})
 			}
 		}
+	}
+	collect(first) // 复用第一页
+	for i := 2; i <= pn; i++ {
+		if c.Ctx != nil {
+			select {
+			case <-c.Ctx.Done():
+				return nil, c.Ctx.Err()
+			default:
+			}
+		}
+		time.Sleep(time.Second)
+		bytes, err := videoFromUP(mid, i)
+		if err != nil {
+			log.Printf("获取 UP 主列表第 %d 页失败: %v, continuing...", i, err)
+			continue
+		}
+		collect(bytes)
 	}
 	return videos, nil
 }
@@ -259,45 +362,73 @@ type Stream struct {
 	VCodec  string
 	VWidth  float64
 	VHeight float64
+	// 音频流编码：用于无损音轨（flac 等）保留容器，普通 AAC 为 m4a。
+	ACodec string
+	// relBase 是模板渲染出的相对路径（不含扩展名），由 Dl 计算，DV/DA/Merge 共用。
+	relBase string
 }
 
-func GetStream(v Video) (*Stream, error) {
-	url := "https://api.bilibili.com/x/player/wbi/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
-	parse, _ := url2.Parse(url)
+// fetchDash 获取 DASH 流信息。UGC 投稿走 x/player/wbi/playurl，
+// PGC 番剧走 pgc/player/web/playurl（响应包在 result 字段）。
+func fetchDash(v Video) (*biliDashResp, error) {
+	base := "https://api.bilibili.com/x/player/wbi/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
+	if v.PGC {
+		base = "https://api.bilibili.com/pgc/player/web/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
+	}
+	parse, _ := url2.Parse(base)
 	query := parse.Query()
 	query.Add("bvid", v.BV)
 	query.Add("cid", v.Cid)
+	if v.PGC && v.EpID != "" {
+		query.Add("ep_id", v.EpID)
+	}
 	parse.RawQuery = query.Encode()
-	url = parse.String()
-	var err error
-	url, err = sign(url)
+	u, err := sign(parse.String())
 	if err != nil {
 		return nil, err
 	}
-	method := "GET"
-
-	req, err := http.NewRequest(method, url, nil)
+	req, err := newAPIRequest(u)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
-	req.Header.Set("Referer", "https://www.bilibili.com/")
-
-	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
-
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
+	// UGC 响应是 {code, data:{dash:{...}}}；PGC 响应是 {code, result:{dash:{...}}}。
+	// 两者只差外层字段名，dash 载荷结构一致，统一收敛成 biliDashResp 供下游使用。
+	var envelope struct {
+		Code   int `json:"code"`
+		Result *struct {
+			Dash dashInfo `json:"dash"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.Result != nil {
+		out := &biliDashResp{}
+		out.Data.Dash = envelope.Result.Dash
+		return out, nil
+	}
+	var ugc biliDashResp
+	if err := json.Unmarshal(body, &ugc); err != nil {
+		return nil, err
+	}
+	if ugc.Code != 0 {
+		return nil, fmt.Errorf("获取播放地址失败 code=%d（番剧可能需要登录/大会员）", ugc.Code)
+	}
+	return &ugc, nil
+}
 
-	var dashResp biliDashResp
-	if err := json.Unmarshal(body, &dashResp); err != nil {
+func GetStream(v Video) (*Stream, error) {
+	dashResp, err := fetchDash(v)
+	if err != nil {
 		return nil, err
 	}
 
@@ -339,19 +470,49 @@ func GetStream(v Video) (*Stream, error) {
 		vHeight = filtered[bestIdx].Height
 	}
 
-	audioStreams := dashResp.Data.Dash.Audio
-	if len(audioStreams) == 0 {
+	// 候选音频：普通 audio + dolby + flac。按 -aq 指定的 id 精确匹配，否则取码率最高。
+	allAudio := make([]dashStream, 0, len(dashResp.Data.Dash.Audio))
+	allAudio = append(allAudio, dashResp.Data.Dash.Audio...)
+	allAudio = append(allAudio, dashResp.Data.Dash.Dolby.Audio...)
+	allAudio = append(allAudio, dashResp.Data.Dash.Flac.Audio...)
+	if len(allAudio) == 0 {
 		return nil, fmt.Errorf("no audio streams available")
 	}
-	// Find best audio stream without full sort
-	bestAudioIdx := 0
-	for i := 1; i < len(audioStreams); i++ {
-		if audioStreams[i].Bandwidth > audioStreams[bestAudioIdx].Bandwidth {
-			bestAudioIdx = i
+	best := pickAudio(allAudio, c.AudioQuality)
+	stream := &Stream{
+		V: videoURL, A: best.BaseURL, Video: v,
+		VCodec: vCodec, VWidth: vWidth, VHeight: vHeight,
+		ACodec: best.Codecs,
+	}
+	return stream, nil
+}
+
+// pickAudio 按音质 id 选流。wanted > 0 时优先精确匹配 id；
+// 未命中则退回码率最高的普通音轨。flac/dolby 保留其原始编码供容器决策。
+func pickAudio(streams []dashStream, wanted int) dashStream {
+	if wanted > 0 {
+		for _, s := range streams {
+			if int(s.ID) == wanted {
+				return s
+			}
 		}
 	}
-	stream := &Stream{V: videoURL, A: audioStreams[bestAudioIdx].BaseURL, Video: v, VCodec: vCodec, VWidth: vWidth, VHeight: vHeight}
-	return stream, nil
+	best := streams[0]
+	for _, s := range streams[1:] {
+		if s.Bandwidth > best.Bandwidth {
+			best = s
+		}
+	}
+	return best
+}
+
+// audioExt 根据音频编码返回容器扩展名。无损（flac）保留 flac，其余用 m4a。
+func audioExt(codecs string) string {
+	lower := strings.ToLower(codecs)
+	if strings.Contains(lower, "flac") {
+		return "flac"
+	}
+	return "m4a"
 }
 
 func PrintDASHInfo(v Video) error {
@@ -368,13 +529,10 @@ func PrintDASHInfo(v Video) error {
 		return err
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := newAPIRequest(url)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
-	req.Header.Set("Referer", "https://www.bilibili.com/")
-	req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -419,85 +577,177 @@ func PrintDASHInfo(v Video) error {
 }
 
 func Dl(stream *Stream) error {
-	stream.Title = fileNameFix(stream.Title)
+	// 模板渲染出相对路径（含 owner 子目录、分 P 标签），扩展名按视频编码决定。
+	videoExt := codecExt(stream.VCodec)
+	stream.relBase = strings.TrimSuffix(RenderPath(&stream.Video, videoExt), "."+videoExt)
+	// 确保目标子目录存在。
+	if err := ensureDir(filepath.Join(c.O, stream.relBase+"."+videoExt)); err != nil {
+		return err
+	}
+
 	if stream.V != "" {
-		err := DV(stream)
-		if err != nil {
+		if err := DV(stream); err != nil {
 			return err
 		}
 	}
-	err := DA(stream)
-	if err != nil {
+	if err := DA(stream); err != nil {
 		return err
 	}
 	log.Println(stream.Title, "下载完成")
 	return nil
 }
 
+// videoPath / audioPath / mergedPath 统一由 relBase 生成，保证 DV/DA/Merge 落点一致。
+func (s *Stream) videoPath() string {
+	return filepath.Join(c.O, s.relBase+"."+codecExt(s.VCodec))
+}
+
+func (s *Stream) audioPath() string {
+	return filepath.Join(c.O, s.relBase+"."+audioExt(s.ACodec))
+}
+
+func (s *Stream) mergedPath() string {
+	// 合并产物与最终视频同名；Merge 成功后删掉分离的流。
+	return s.videoPath()
+}
+
 // 下载失败时的最大尝试次数（应对 CDN 偶发断流）
 const downloadAttempts = 3
 
-// downloadFile 下载单个资源到指定路径，失败时自动重试
+// 下载进度元信息：仅在 NDJSON 模式下用于标注事件归属。
+type downloadMeta struct {
+	BV   string
+	Page int
+	Kind string // video / audio / cover / ...
+}
+
+// downloadFile 下载单个资源到指定路径，失败时自动重试。
+// 每次重试都先检查本地已有字节并用 Range 续传，避免 CDN 断流后从头再来。
 func downloadFile(rawURL string, path string) error {
+	return downloadFileWith(rawURL, path, downloadMeta{Kind: filepath.Ext(path)})
+}
+
+func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
+	emitProgress(progressEvent{Event: "start", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
 	var lastErr error
 	for i := 1; i <= downloadAttempts; i++ {
 		if i > 1 {
-			// 指数退避：1s、2s
-			time.Sleep(time.Duration(1<<uint(i-2)) * time.Second)
+			// 指数退避：1s、2s；期间响应取消信号。
+			wait := time.Duration(1<<uint(i-2)) * time.Second
+			if c.Ctx != nil {
+				select {
+				case <-c.Ctx.Done():
+					return c.Ctx.Err()
+				case <-time.After(wait):
+				}
+			} else {
+				time.Sleep(wait)
+			}
 			log.Printf("重试下载 (%d/%d): %v", i, downloadAttempts, path)
 		}
-		if lastErr = downloadOnce(rawURL, path); lastErr == nil {
+		if lastErr = downloadOnceWith(rawURL, path, meta); lastErr == nil {
+			emitProgress(progressEvent{Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
 			return nil
+		}
+		if c.Ctx != nil && c.Ctx.Err() != nil {
+			return c.Ctx.Err()
 		}
 		log.Printf("下载失败 (%d/%d): %v", i, downloadAttempts, lastErr)
 	}
+	emitProgress(progressEvent{Event: "error", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: fmt.Sprint(lastErr)})
 	return lastErr
 }
 
 func downloadOnce(rawURL string, path string) error {
-	req, err := http.NewRequest("GET", rawURL, nil)
+	return downloadOnceWith(rawURL, path, downloadMeta{Kind: filepath.Ext(path)})
+}
+
+func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
+	if err := ensureDir(path); err != nil {
+		return err
+	}
+	var existing int64
+	if st, err := os.Stat(path); err == nil {
+		existing = st.Size()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	ctx := c.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Referer", "https://www.bilibili.com")
+	if existing > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existing))
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+
+	// 206 Partial Content：从断点续写；其它状态一律从头覆盖。
+	appendMode := resp.StatusCode == http.StatusPartialContent && existing > 0
+	if resp.StatusCode != http.StatusOK && !appendMode {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+
+	flags := os.O_CREATE | os.O_RDWR
+	if appendMode {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(path, flags, 0o666)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	if _, err = io.Copy(file, resp.Body); err != nil {
+
+	// 限速 reader + 进度 writer：两者都不改变下载语义，只观测/节流字节流。
+	body := util.NewRateReader(resp.Body, c.RateBytes, ctx)
+	total := resp.ContentLength
+	if appendMode && total > 0 {
+		total += existing
+	}
+	sink := io.Writer(file)
+	if c.ProgressJSON {
+		ev := progressEvent{BV: meta.BV, Page: meta.Page, Kind: meta.Kind}
+		sink = newProgressWriter(file, ev, total)
+	}
+	written, err := io.Copy(sink, body)
+	if err != nil {
 		return err
+	}
+	if appendMode {
+		log.Printf("续传完成：%s (+%d bytes)", filepath.Base(path), written)
 	}
 	return nil
 }
 
-func DV(stream *Stream) error {
-	ext := codecExt(stream.VCodec)
-	var name string
-	if c.AddBVSuffix {
-		name = stream.Title + "_" + stream.BV + "." + ext
-	} else {
-		name = stream.Title + "." + ext
+func ensureDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		return nil
 	}
-	return downloadFile(stream.V, filepath.Join(c.O, name))
+	return os.MkdirAll(dir, 0o755)
+}
+
+func DV(stream *Stream) error {
+	return downloadFileWith(stream.V, stream.videoPath(), downloadMeta{
+		BV: stream.BV, Page: stream.ActivePage, Kind: "video",
+	})
 }
 
 func DA(stream *Stream) error {
-	var name string
-	if c.AddBVSuffix {
-		name = stream.Title + "_" + stream.BV + ".m4a"
-	} else {
-		name = stream.Title + ".m4a"
-	}
-	return downloadFile(stream.A, filepath.Join(c.O, name))
+	return downloadFileWith(stream.A, stream.audioPath(), downloadMeta{
+		BV: stream.BV, Page: stream.ActivePage, Kind: "audio",
+	})
 }
 
 func VideoFromBV(bv string) (*Video, error) {
@@ -509,60 +759,52 @@ func VideoFromBV(bv string) (*Video, error) {
 	if err := json.Unmarshal(info, &resp); err != nil {
 		return nil, err
 	}
-	video := Video{BV: bv, Cid: resp.Data.Cid.String(), Title: resp.Data.Title}
-	log.Printf("%+v\n", video)
+	video := Video{BV: bv}
+	if _, err := applyVideoInfo(&video, &resp); err != nil {
+		return nil, err
+	}
+	// 不打印完整结构体：SESSDATA 虽不在其中，但保持日志最小化。
+	log.Printf("解析视频 %s: %s (%d P, owner=%s)", bv, video.Title, len(video.Pages), video.Owner)
 	return &video, nil
 }
 
 func Merge(stream *Stream) error {
+	if stream.relBase == "" {
+		stream.relBase = strings.TrimSuffix(
+			RenderPath(&stream.Video, codecExt(stream.VCodec)), "."+codecExt(stream.VCodec))
+	}
+
 	if stream.V == "" {
-		// Audio-only mode: rename audio file to final name
-		var audio, output string
-		if c.AddBVSuffix {
-			audio = filepath.Join(c.O, stream.Title+"_"+stream.BV+".m4a")
-			output = filepath.Join(c.O, stream.Title+"_"+stream.BV+"-merged.m4a")
-		} else {
-			audio = filepath.Join(c.O, stream.Title+".m4a")
-			output = filepath.Join(c.O, stream.Title+"-merged.m4a")
-		}
-		if err := os.Rename(audio, output); err != nil {
-			return err
-		}
+		// 仅音频：文件已是最终形态（flac 保留原样，AAC 为 m4a），无需重命名。
 		log.Println(stream.Title, "音频处理完成")
 		return nil
 	}
 
-	ext := codecExt(stream.VCodec)
-	var video, audio, output string
-	if c.AddBVSuffix {
-		video = filepath.Join(c.O, stream.Title+"_"+stream.BV+"."+ext)
-		audio = filepath.Join(c.O, stream.Title+"_"+stream.BV+".m4a")
-		output = filepath.Join(c.O, stream.Title+"_"+stream.BV+"-merged."+ext)
-	} else {
-		video = filepath.Join(c.O, stream.Title+"."+ext)
-		audio = filepath.Join(c.O, stream.Title+".m4a")
-		output = filepath.Join(c.O, stream.Title+"-merged."+ext)
+	video := stream.videoPath()
+	audio := stream.audioPath()
+	output := stream.mergedPath()
+	// 合并到临时文件，成功后原子替换，避免失败时留下半个最终文件。
+	// 临时文件必须保留正确的容器扩展名（ffmpeg 靠它推断 muxer），
+	// 所以插入 .merging 到扩展名之前：xxx.merging.mp4。
+	ext := filepath.Ext(output)
+	tmp := strings.TrimSuffix(output, ext) + ".merging" + ext
+	_ = os.Remove(tmp)
+	ctx := c.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	cmd := exec.Command("ffmpeg", "-y", "-i", video, "-i", audio, "-c", "copy", output)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", video, "-i", audio, "-c", "copy", tmp)
 	if err := cmd.Run(); err != nil {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("ffmpeg merge failed: %w", err)
 	}
-	if c.Delete {
-		if err := os.Remove(video); err != nil {
-			return err
-		}
-		if err := os.Remove(audio); err != nil {
-			return err
-		}
-		if c.AddBVSuffix {
-			if err := os.Rename(output, filepath.Join(c.O, stream.Title+"_"+stream.BV+"."+ext)); err != nil {
-				return err
-			}
-		} else {
-			if err := os.Rename(output, filepath.Join(c.O, stream.Title+"."+ext)); err != nil {
-				return err
-			}
-		}
+	if err := os.Rename(tmp, output); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	// output 与 video 同路径，Rename 已覆盖原视频；Delete 只需删掉分离音轨。
+	if c.Delete && audio != output {
+		_ = os.Remove(audio)
 	}
 	log.Println(stream.Title, "合并完成")
 	return nil

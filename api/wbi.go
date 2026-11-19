@@ -6,15 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/Felix2yu/bili-dl/c"
 )
 
 var (
@@ -25,6 +22,7 @@ var (
 		36, 20, 34, 44, 52,
 	}
 	cache          sync.Map
+	cacheMu        sync.Mutex // 保护 lastUpdateTime 与更新流程，避免 -j>1 时的 data race
 	lastUpdateTime time.Time
 )
 
@@ -107,6 +105,8 @@ func sanitizeString(s string) string {
 }
 
 func updateCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
 	if time.Since(lastUpdateTime).Minutes() < 10 && lastUpdateTime.Unix() > 0 {
 		return
 	}
@@ -135,14 +135,9 @@ func getWbiKeysCached() (string, string) {
 }
 
 func getWbiKeys() (string, string) {
-	req, err := http.NewRequest("GET", "https://api.bilibili.com/x/web-interface/nav", nil)
+	req, err := newAPIRequest("https://api.bilibili.com/x/web-interface/nav")
 	if err != nil {
 		return "", ""
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0")
-	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if c.Cookie != "" {
-		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
 	}
 
 	resp, err := client.Do(req)
