@@ -73,6 +73,31 @@ func TestSRTTime(t *testing.T) {
 	}
 }
 
+func TestUGCSeasonPageShapeCompat(t *testing.T) {
+	// B站新版 ugc_season.episodes[].page 从整数改为对象，旧版本仍可能为整数。
+	// 两种形态都应能解析，并归一化到 Page，合集展开不受影响。
+	newShape := []byte(`{"code":0,"data":{"bvid":"BV1","title":"主视频","owner":{"mid":123,"name":"UP"},"pages":[{"page":1,"cid":9,"part":"P1"}],"ugc_season":{"id":5,"title":"合集名","sections":[{"id":1,"episodes":[
+		{"bvid":"BV2","cid":10,"title":"第二集","page":{"cid":10,"page":2,"from":"vupload","part":"P2","duration":197}},
+		{"bvid":"BV3","cid":11,"title":"第三集","page":3}
+	]}]}}}`)
+	var resp biliVideoInfoResp
+	if err := json.Unmarshal(newShape, &resp); err != nil {
+		t.Fatalf("新版 page 对象解析失败: %v", err)
+	}
+	eps := resp.Data.UGCSeason.Sections[0].Episodes
+	if len(eps) != 2 || eps[0].Page != 2 || eps[1].Page != 3 {
+		t.Fatalf("page 归一化错误: %+v", eps)
+	}
+	v, err := applyVideoInfo(&Video{BV: "BV1"}, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := ExpandUGCSeason(v)
+	if len(parts) != 2 || parts[0].BV != "BV2" || parts[1].BV != "BV3" {
+		t.Errorf("合集展开错误: %+v", parts)
+	}
+}
+
 func TestPGCStructureRoundTrip(t *testing.T) {
 	// 验证 ugcSeason/biliVideoInfoResp 的字段映射，防止 JSON tag 拼写错误。
 	raw := []byte(`{"code":0,"data":{"bvid":"BV1","title":"主视频","owner":{"mid":123,"name":"UP"},"pages":[{"page":1,"cid":9,"part":"P1"}],"ugc_season":{"id":5,"title":"合集名","sections":[{"id":1,"episodes":[{"bvid":"BV2","cid":10,"title":"第二集"},{"bvid":"BV3","cid":11,"title":"第三集"}]}]}}}`)

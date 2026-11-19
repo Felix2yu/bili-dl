@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -156,6 +157,36 @@ type ugcSeasonEpisode struct {
 	Title string      `json:"title"`
 	Part  string      `json:"part"`
 	Page  int         `json:"page"`
+}
+
+// UnmarshalJSON 兼容 B站 ugc_season.episodes[].page 的两种形态：
+// 旧接口返回整数分 P 序号（如 1），新接口改为对象
+// （如 {"page":1,"part":"...","cid":...}）。两种情况都归一化为 Page 整数。
+func (e *ugcSeasonEpisode) UnmarshalJSON(b []byte) error {
+	type plain ugcSeasonEpisode
+	var aux struct {
+		plain
+		Page json.RawMessage `json:"page"`
+	}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*e = ugcSeasonEpisode(aux.plain)
+	raw := bytes.TrimSpace(aux.Page)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	if raw[0] == '{' {
+		var obj struct {
+			Page int `json:"page"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return err
+		}
+		e.Page = obj.Page
+		return nil
+	}
+	return json.Unmarshal(raw, &e.Page)
 }
 
 type ugcSeason struct {
