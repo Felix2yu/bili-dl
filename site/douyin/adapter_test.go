@@ -2,10 +2,12 @@ package douyin
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -19,11 +21,11 @@ func shellHTML() string {
 		`{"itemId":"` + aweme + `","share_sign":"xxx","abParams":{}}},"errors":{}}</script></html>`
 }
 
-func playableHTML() string {
+func playableHTML(playURL string) string {
 	return `<html><script>window._ROUTER_DATA = {"loaderData":{"video_(id)/page":{` +
 		`"itemId":"` + aweme + `","aweme_detail":{"desc":"看三国杀插画猜人物",` +
 		`"author":{"nickname":"攻心与汉桑"},` +
-		`"video":{"play_addr":{"url_list":["https://aweme.snssdk.com/aweme/v1/play/?a=1"]},` +
+		`"video":{"play_addr":{"url_list":["` + playURL + `"]},` +
 		`"cover":{"url_list":["https://p3-imgen.snssdk.com/cover.jpg"]}}}}}}}}</script></html>`
 }
 
@@ -60,14 +62,16 @@ func TestResolveShellReportsNoPlayable(t *testing.T) {
 }
 
 func TestResolveShortLinkAndPlayableStreams(t *testing.T) {
+	playURL := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/fy9rPadJ1SU") {
 			http.Redirect(w, r, "/share/video/"+aweme+"/?region=CN", http.StatusFound)
 			return
 		}
-		_, _ = fmt.Fprint(w, playableHTML())
+		_, _ = fmt.Fprint(w, playableHTML(playURL))
 	}))
 	defer srv.Close()
+	playURL = srv.URL + "/play/?a=1"
 
 	adapter := &Adapter{ShortHosts: []string{"127.0.0.1"}}
 	shared := "复制打开抖音，看看作品 " + srv.URL + "/fy9rPadJ1SU/ :9pm"
@@ -96,15 +100,17 @@ func TestResolveShortLinkAndPlayableStreams(t *testing.T) {
 }
 
 func TestResolveUsesTTwidSession(t *testing.T) {
+	playURL := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Cookie"), "ttwid=") {
 			http.SetCookie(w, &http.Cookie{Name: "ttwid", Value: "session-1", Path: "/"})
 			_, _ = fmt.Fprint(w, shellHTML())
 			return
 		}
-		_, _ = fmt.Fprint(w, playableHTML())
+		_, _ = fmt.Fprint(w, playableHTML(playURL))
 	}))
 	defer srv.Close()
+	playURL = srv.URL + "/play/?a=1"
 
 	media, err := NewAdapter().Resolve(context.Background(), srv.URL+"/video/"+aweme, site.ResolveOptions{})
 	if err != nil {
@@ -116,6 +122,37 @@ func TestResolveUsesTTwidSession(t *testing.T) {
 	set, err := NewAdapter().Streams(context.Background(), media[0], site.Selection{})
 	if err != nil || len(set.Videos) != 1 {
 		t.Fatalf("码流错误: %+v %v", set, err)
+	}
+}
+
+func TestRewriteCDNHost(t *testing.T) {
+	const realHost = "v95-test.douyinvod.com"
+	encoded := base64.StdEncoding.EncodeToString([]byte(realHost))
+	location := "https://edge.jspcdn.cn/" + realHost + "/path/video.mp4?real_host=" + url.QueryEscape(encoded)
+
+	got, err := url.Parse(rewriteCDNHost(location))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != realHost || got.Path != "/path/video.mp4" {
+		t.Errorf("CDN 改写错误: host=%q path=%q", got.Host, got.Path)
+	}
+}
+
+func TestDirectMediaURLFollowsRedirects(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/final" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Location", srv.URL+"/final")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer srv.Close()
+
+	if got := directMediaURL(context.Background(), srv.URL+"/play"); got != srv.URL+"/final" {
+		t.Errorf("应跟随到最终地址，实际 %q", got)
 	}
 }
 

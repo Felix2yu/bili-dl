@@ -11,6 +11,7 @@ package douyin
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -128,7 +129,9 @@ func (a *Adapter) Resolve(ctx context.Context, rawURL string, opt site.ResolveOp
 }
 
 // Streams 返回 Resolve 阶段提取到的直链。
-func (a *Adapter) Streams(_ context.Context, m *site.Media, sel site.Selection) (*site.StreamSet, error) {
+// 抖音的 play_addr 会 302 到 jspcdn.cn；本机常把该域名污染成 0.0.0.0，
+// 因此在这里跟随一次重定向并改写成 real_host 指向的真实 CDN，避免依赖代理环境变量。
+func (a *Adapter) Streams(ctx context.Context, m *site.Media, sel site.Selection) (*site.StreamSet, error) {
 	if m == nil || m.Extra == nil || m.Extra["streams"] == "" {
 		return nil, site.NewError(site.ErrUnsupportedURL, "媒体里没有码流信息")
 	}
@@ -145,8 +148,12 @@ func (a *Adapter) Streams(_ context.Context, m *site.Media, sel site.Selection) 
 	}
 	set := &site.StreamSet{}
 	for _, spec := range specs {
+		url := spec.URL
+		if needsCDNRewrite(url) {
+			url = directMediaURL(ctx, url)
+		}
 		set.Videos = append(set.Videos, site.Stream{
-			URL:       spec.URL,
+			URL:       url,
 			Codec:     "avc1",
 			Container: spec.Container,
 			Kind:      spec.Kind,
@@ -157,6 +164,82 @@ func (a *Adapter) Streams(_ context.Context, m *site.Media, sel site.Selection) 
 		return nil, site.NewError(site.ErrNotFound, "没有可用视频流")
 	}
 	return set, nil
+}
+
+// needsCDNRewrite 只对抖音自家的播放地址做重定向展开，避免测试用的本地地址被误触。
+func needsCDNRewrite(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return strings.Contains(host, "snssdk.com") ||
+		strings.Contains(host, "douyin.com") ||
+		strings.HasSuffix(host, "ixigua.com")
+}
+
+// directMediaURL 逐跳跟随播放地址的 302，并把被污染/不可达的 jspcdn.cn 域名
+// 换成 Location 里 real_host 指定的真实 CDN。改写路径时要去掉重复的 hostname 前缀。
+// 必须走到最终 2xx 才返回：真实 CDN 偶尔还会再跳一个 jspcdn 边缘域名。
+func directMediaURL(ctx context.Context, raw string) string {
+	client := &http.Client{
+		Transport: http.DefaultClient.Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	current := raw
+	for hop := 0; hop < 5; hop++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, current, nil)
+		if err != nil {
+			return raw
+		}
+		for k, v := range downloadHeaders() {
+			req.Header[k] = v
+		}
+		req.Header.Set("Range", "bytes=0-0") // 探测重定向，不要把整段视频拉下来。
+		resp, err := client.Do(req)
+		if err != nil {
+			return raw
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		resp.Body.Close()
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+			return current
+		}
+		location := resp.Header.Get("Location")
+		if location == "" {
+			return current
+		}
+		current = rewriteCDNHost(location)
+	}
+	return current
+}
+
+// rewriteCDNHost 把 jspcdn.cn 边缘域名换成 real_host 声明的真实 CDN。
+func rewriteCDNHost(location string) string {
+	u, err := url.Parse(location)
+	if err != nil || !strings.HasSuffix(strings.ToLower(u.Hostname()), "jspcdn.cn") {
+		return location
+	}
+	encoded := u.Query().Get("real_host")
+	if encoded == "" {
+		return location
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(encoded)
+		if err != nil {
+			return location
+		}
+	}
+	realHost := string(decoded)
+	if realHost == "" {
+		return location
+	}
+	u.Host = realHost
+	u.Path = strings.TrimPrefix(u.Path, "/"+realHost)
+	return u.String()
 }
 
 // ---- 取数 ----
