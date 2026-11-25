@@ -29,6 +29,8 @@ func Parse(args []string) {
 		"d": true, "tmp-dir": true, "q": true, "aq": true,
 		"vcodec": true, "download-vcodec-priority": true, "output-format": true,
 		"tp": true, "auth-file": true, "auth-profile": true,
+		// 结构化结果输出：最终产物清单的写入路径
+		"result-json": true,
 		// bili-dl 原生
 		"c": true, "up": true, "o": true, "j": true, "bv": true,
 		"resolution": true, "codec": true, "rate": true,
@@ -129,6 +131,8 @@ func applyFlag(key, value string, provided bool) {
 		ProgressJSON = boolValue(value, provided)
 	case "no-progress-json":
 		ProgressJSON = !boolValue(value, provided)
+	case "result-json":
+		ResultJSON = strings.TrimSpace(value)
 
 	// ---- 番剧/剧集（PGC）----
 	case "ss", "season-id":
@@ -225,7 +229,7 @@ func splitCSV(s string) []string {
 
 // Describe 返回不含凭据的配置摘要，供日志使用。SESSDATA 永不出现在这里。
 func Describe() string {
-	return fmt.Sprintf("dir=%s batch=%v q=%d aq=%d tp=%s codec=%s priority=%v j=%d rate=%d pgc=%s/%s json=%v extras=%v/%v/%v",
+	return fmt.Sprintf("dir=%s batch=%v q=%d aq=%d tp=%s codec=%s priority=%v j=%d rate=%d pgc=%s/%s json=%v result=%v extras=%v/%v/%v",
 		O, Batch, VideoQuality, AudioQuality, SubpathTemplate, Codec, VCodecPriority, J,
-		RateBytes, SeasonID, EpID, ProgressJSON, DownloadDanmaku, DownloadSubtitle, SaveCover)
+		RateBytes, SeasonID, EpID, ProgressJSON, ResultJSON != "", DownloadDanmaku, DownloadSubtitle, SaveCover)
 }

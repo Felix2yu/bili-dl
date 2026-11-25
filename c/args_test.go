@@ -106,3 +106,31 @@ func TestDescribeHasNoCookie(t *testing.T) {
 		t.Fatalf("Describe 泄漏了 SESSDATA: %s", desc)
 	}
 }
+
+func TestParseResultJSONFlag(t *testing.T) {
+	// --result-json 必须吃到一个值，否则后面的 URL 会被误当成路径。
+	Parse([]string{
+		"--progress-json",
+		"--result-json", "/tmp/out/result.json",
+		"https://www.bilibili.com/video/BV1XY411o7Cv/",
+	})
+
+	if ResultJSON != "/tmp/out/result.json" {
+		t.Errorf("ResultJSON = %q, want /tmp/out/result.json", ResultJSON)
+	}
+	if got, want := URLs, []string{"https://www.bilibili.com/video/BV1XY411o7Cv/"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("URLs = %v, want %v（URL 不能被当成 result-json 的值）", got, want)
+	}
+
+	// 等号形态同样要支持。
+	Parse([]string{"--result-json=/tmp/r.json", "BV1XY411o7Cv"})
+	if ResultJSON != "/tmp/r.json" {
+		t.Errorf("等号形态解析失败，ResultJSON = %q", ResultJSON)
+	}
+
+	// Defaults 必须把上一次的值清空，避免同进程复用（bili-history 内嵌调用）串味。
+	Parse([]string{"BV1XY411o7Cv"})
+	if ResultJSON != "" {
+		t.Errorf("未传 flag 时应为空，实际 %q", ResultJSON)
+	}
+}

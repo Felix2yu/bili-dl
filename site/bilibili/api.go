@@ -12,11 +12,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/bili-dl/site"
 	"github.com/Felix2yu/bili-dl/util"
 )
 
@@ -668,6 +670,47 @@ func (s *Stream) mergedPath() string {
 	return s.videoPath()
 }
 
+// RelBase 返回产物相对基路径（含 UP 主子目录与分 P 标签，不含扩展名）。
+// 由 Dl 计算并缓存；未下载时为空。
+func (s *Stream) RelBase() string { return s.relBase }
+
+// VideoPath 返回视频流（合并后即成品）的绝对路径。
+func (s *Stream) VideoPath() string { return s.videoPath() }
+
+// AudioPath 返回音频流的绝对路径；合并且删除分离流后该文件不再存在。
+func (s *Stream) AudioPath() string { return s.audioPath() }
+
+// Outputs 返回本次下载实际落盘的产物。
+//
+// 以「文件是否真实存在」为准：合并后删除的分离音轨、被关闭的弹幕/字幕/封面
+// 都不会出现在结果里，因此调用方不必自己猜哪一步生效了。
+func (s *Stream) Outputs() []site.Output {
+	if s == nil || s.relBase == "" {
+		return nil
+	}
+	var out []site.Output
+	add := func(path, kind string) {
+		out = append(out, outputOf(path, kind)...)
+	}
+	if s.V != "" {
+		add(s.videoPath(), "video")
+	}
+	if s.A != "" {
+		add(s.audioPath(), "audio")
+	}
+	base := filepath.Join(c.O, s.relBase)
+	add(base+".cover.jpg", "cover")
+	add(base+".danmaku.ass", "danmaku")
+	// 字幕语言由站点返回，可能多个，用通配收集。
+	if matches, err := filepath.Glob(base + ".*.srt"); err == nil {
+		sort.Strings(matches)
+		for _, m := range matches {
+			add(m, "subtitle")
+		}
+	}
+	return out
+}
+
 // 下载失败时的最大尝试次数（应对 CDN 偶发断流）
 const downloadAttempts = 3
 
@@ -678,14 +721,8 @@ type downloadMeta struct {
 	Kind string // video / audio / cover / ...
 }
 
-// downloadFile 下载单个资源到指定路径，失败时自动重试。
-// 每次重试都先检查本地已有字节并用 Range 续传，避免 CDN 断流后从头再来。
-func downloadFile(rawURL string, path string) error {
-	return downloadFileWith(rawURL, path, downloadMeta{Kind: filepath.Ext(path)})
-}
-
 func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
-	emitProgress(ProgressEvent{Event: "start", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
+	emitProgress(ProgressEvent{Event: "start", MediaID: meta.BV, BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
 	var lastErr error
 	for i := 1; i <= downloadAttempts; i++ {
 		if i > 1 {
@@ -703,7 +740,16 @@ func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
 			log.Printf("重试下载 (%d/%d): %v", i, downloadAttempts, path)
 		}
 		if lastErr = downloadOnceWith(rawURL, path, meta); lastErr == nil {
-			emitProgress(ProgressEvent{Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: filepath.Base(path)})
+			emitProgress(ProgressEvent{
+				Event:   "done",
+				MediaID: meta.BV,
+				BV:      meta.BV,
+				Page:    meta.Page,
+				Kind:    meta.Kind,
+				Message: filepath.Base(path),
+				// 显式回报产出：调用方据此入库，不必再扫目录差集。
+				Outputs: outputOf(path, meta.Kind),
+			})
 			return nil
 		}
 		if c.Ctx != nil && c.Ctx.Err() != nil {
@@ -711,12 +757,46 @@ func downloadFileWith(rawURL string, path string, meta downloadMeta) error {
 		}
 		log.Printf("下载失败 (%d/%d): %v", i, downloadAttempts, lastErr)
 	}
-	emitProgress(ProgressEvent{Event: "error", BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: fmt.Sprint(lastErr)})
+	emitProgress(ProgressEvent{Event: "error", MediaID: meta.BV, BV: meta.BV, Page: meta.Page, Kind: meta.Kind, Message: fmt.Sprint(lastErr)})
 	return lastErr
 }
 
+// outputOf 把已落盘文件转成一条 Output；文件不存在时返回 nil（不制造幻影产出）。
+func outputOf(path, kind string) []site.Output {
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return nil
+	}
+	out := site.Output{Path: path, Kind: normalizeKind(kind, path), Bytes: st.Size()}
+	if out.Kind == "video" || out.Kind == "audio" {
+		out.Container = strings.TrimPrefix(filepath.Ext(path), ".")
+	}
+	return []site.Output{out}
+}
+
+// normalizeKind 兜底修正 kind：旧调用方可能传 ".mp4" 这类扩展名当 kind。
+func normalizeKind(kind, path string) string {
+	switch kind {
+	case "video", "audio", "cover", "danmaku", "subtitle", "image":
+		return kind
+	}
+	switch strings.TrimPrefix(filepath.Ext(path), ".") {
+	case "mp4", "mkv", "mov", "flv":
+		return "video"
+	case "m4a", "flac", "mp3":
+		return "audio"
+	case "jpg", "jpeg", "png", "webp":
+		return "cover"
+	case "ass", "xml":
+		return "danmaku"
+	case "srt", "vtt":
+		return "subtitle"
+	}
+	return "video"
+}
+
 func downloadOnce(rawURL string, path string) error {
-	return downloadOnceWith(rawURL, path, downloadMeta{Kind: filepath.Ext(path)})
+	return downloadOnceWith(rawURL, path, downloadMeta{Kind: "video"})
 }
 
 func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
@@ -754,8 +834,9 @@ func downloadOnceWith(rawURL string, path string, meta downloadMeta) error {
 		if total := contentRangeTotal(resp.Header.Get("Content-Range")); total > 0 && existing >= total {
 			log.Printf("本地文件已完整（%d bytes），跳过下载：%s", existing, filepath.Base(path))
 			emitProgress(ProgressEvent{
-				Event: "done", BV: meta.BV, Page: meta.Page, Kind: meta.Kind,
+				Event: "done", MediaID: meta.BV, BV: meta.BV, Page: meta.Page, Kind: meta.Kind,
 				Current: existing, Total: existing, Percent: 100,
+				Outputs: outputOf(path, meta.Kind),
 			})
 			return nil
 		}

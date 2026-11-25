@@ -62,6 +62,7 @@ var (
 	NoColor        bool
 	ProgressJSON   bool            // --progress-json：向 stdout 输出 NDJSON 进度事件
 	ProgressWriter io.Writer       // NDJSON 的落点，nil 表示 os.Stdout；嵌入方需要接管输出时设置
+	ResultJSON     string          // --result-json：下载结束后把产物清单写到该路径
 	RateLimit      string          // -rate：限速，如 "2m" / "500k"
 	RateBytes      int64           // 解析后的每秒字节上限，0 表示不限速
 	Ctx            context.Context // 由 main 注入，贯穿下载与合并，响应 SIGTERM
@@ -70,6 +71,10 @@ var (
 func Defaults() {
 	J = 1
 	O = "."
+	// 输入侧必须清空：Parse 会向 URLs 追加、向 BVs 赋值，
+	// 同进程多次调用（内嵌方复用、测试）不清就会累积上一次的目标。
+	URLs = nil
+	BVs = ""
 	Merge = true
 	Delete = true
 	AddBVSuffix = true
@@ -84,6 +89,7 @@ func Defaults() {
 	NoProgress = false
 	NoColor = false
 	ProgressJSON = false
+	ResultJSON = ""
 	RateLimit = ""
 	RateBytes = 0
 	SeasonID = ""

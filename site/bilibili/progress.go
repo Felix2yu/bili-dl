@@ -9,22 +9,12 @@ import (
 	"time"
 
 	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/bili-dl/site"
 )
 
-// ProgressEvent 是一次下载动作的状态变化，与 NDJSON 事件字段一一对应。
-// 事件类型：start / progress / done / error。
-type ProgressEvent struct {
-	Event     string  `json:"event"`
-	BV        string  `json:"bv"`
-	Page      int     `json:"page,omitempty"`
-	Kind      string  `json:"kind,omitempty"` // video / audio / cover / danmaku / subtitle
-	Current   int64   `json:"current,omitempty"`
-	Total     int64   `json:"total,omitempty"`
-	Percent   float64 `json:"percent,omitempty"`
-	SpeedBPS  int64   `json:"speed_bps,omitempty"`
-	Message   string  `json:"message,omitempty"`
-	Timestamp int64   `json:"ts"` // 毫秒时间戳
-}
+// ProgressEvent 复用 site 的事件定义：字段与 --progress-json 的 NDJSON 一一对应，
+// 同时供进程内 hook 使用。保留本别名是为了让 api.ProgressEvent 的既有调用方零改动。
+type ProgressEvent = site.Event
 
 var (
 	progressMu   sync.Mutex

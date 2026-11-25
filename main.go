@@ -81,6 +81,26 @@ func run(args []string) int {
 	if code != exitOK {
 		return code
 	}
+
+	// no-overwrite：仅在“未使用模板”时启用（模板模式下产物路径由模板决定，
+	// 流影靠目录差集判定产出，跳过已存在会导致零产出误判）。
+	if c.DisableOverwrite && c.SubpathTemplate == "" {
+		targets = skipExisting(targets)
+	}
+
+	outcomes := newOutcomeCollector()
+	// flushReport 在每条「会产出文件」的退出路径上写结构化结果。
+	// 解析阶段全失败也要写：调用方需要区分「一个都没解析出来」与「下载失败」。
+	flushReport := func(canceled bool) {
+		if c.InfoOnly || c.ResultJSON == "" {
+			return
+		}
+		if err := writeReport(c.ResultJSON, buildReport(outcomes.snapshot(), canceled)); err != nil {
+			log.Printf("写结果文件失败: %v", err)
+			failed.Add(1)
+		}
+	}
+
 	if len(targets) == 0 {
 		// 有输入但全部解析/获取失败 → 失败；真的什么都没给 → 用法错误。
 		// 番剧/剧集参数也计入"有输入"，避免 PGC 失败被误报成用法错误(exit 2)。
@@ -88,17 +108,12 @@ func run(args []string) int {
 			c.SeasonID != "" || c.EpID != ""
 		if hasInput {
 			log.Printf("所有输入均无法解析，%d 个任务失败", failed.Load())
+			flushReport(false)
 			return exitFailed
 		}
 		fmt.Fprintln(os.Stderr, "用法: bili-dl [--batch] <url|BV号|av号|b23短链> [-d 下载目录] [选项]")
 		fmt.Fprintln(os.Stderr, "      bili-dl -up <mid> [-d 下载目录]  # 下载 UP 主全部投稿")
 		return exitUsage
-	}
-
-	// no-overwrite：仅在“未使用模板”时启用（模板模式下产物路径由模板决定，
-	// 流影靠目录差集判定产出，跳过已存在会导致零产出误判）。
-	if c.DisableOverwrite && c.SubpathTemplate == "" {
-		targets = skipExisting(targets)
 	}
 
 	if c.InfoOnly {
@@ -109,8 +124,11 @@ func run(args []string) int {
 			}
 		}
 	} else {
-		downloadAll(targets)
+		downloadAll(targets, outcomes)
 	}
+	// 无论成功、部分失败还是被取消都要落盘：调用方需要知道已经下成了哪些文件，
+	// 取消场景尤其如此。-i 只查看码流、不产出文件，故不写结果。
+	flushReport(ctx.Err() != nil)
 
 	if ctx.Err() != nil {
 		log.Println("已取消")
@@ -224,7 +242,7 @@ func expandPages(v *api.Video, startPage int) []api.Video {
 	return out
 }
 
-func downloadAll(targets []api.Video) {
+func downloadAll(targets []api.Video, outcomes *outcomeCollector) {
 	limit := util.NewGoLimit(c.J)
 	for _, v := range targets {
 		if c.Ctx.Err() != nil {
@@ -239,26 +257,51 @@ func downloadAll(targets []api.Video) {
 				return
 			default:
 			}
+
+			report := TargetReport{
+				MediaID: v.BV,
+				BV:      v.BV,
+				Page:    v.ActivePage,
+				Title:   v.Title,
+			}
+
 			stream, err := api.GetStream(v)
 			if err != nil {
 				log.Printf("获取流失败 [%s]: %v", v.BV, err)
 				failed.Add(1)
+				report.State = "failed"
+				report.Error = err.Error()
+				outcomes.add(report)
 				return
 			}
+
+			var failure string
 			if err := api.Dl(stream); err != nil {
 				log.Printf("下载失败 [%s]: %v", v.BV, err)
 				failed.Add(1)
-				return
-			}
-			// -m 对所有分支统一生效（旧版 BV 分支无条件合并的 bug 已修）。
-			if c.FFMPEG && c.Merge {
+				failure = err.Error()
+			} else if c.FFMPEG && c.Merge {
+				// -m 对所有分支统一生效（旧版 BV 分支无条件合并的 bug 已修）。
 				if err := api.Merge(stream); err != nil {
+					// 合并失败仍保留分离流，产物照实上报，便于调用方判断「文件在但不完整」。
 					log.Printf("合并失败 [%s]: %v", v.BV, err)
 					failed.Add(1)
+					failure = err.Error()
 				}
 			}
-			// 弹幕/字幕/封面：best-effort，失败不增加 failed 计数。
-			api.DownloadExtras(stream)
+			if failure == "" {
+				// 弹幕/字幕/封面：best-effort，失败不增加 failed 计数。
+				api.DownloadExtras(stream)
+			}
+
+			if failure == "" {
+				report.State = "succeeded"
+			} else {
+				report.State = "failed"
+				report.Error = failure
+			}
+			report.Outputs = stream.Outputs()
+			outcomes.add(report)
 		}()
 	}
 	limit.Wait()

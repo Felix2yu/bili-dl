@@ -44,6 +44,44 @@ go install github.com/Felix2yu/bili-dl@latest
 -i    仅查看视频DASH信息, 不下载
 ```
 
+### 机器可读输出
+
+供上层程序（如「留影」客户端）解析，日志仍全部走 stderr，stdout 留给机器可读输出。
+
+```
+--progress-json
+    向 stdout 逐行输出 NDJSON 进度事件：start / progress / done / error。
+    done 事件带 outputs[]（path / kind / container / bytes），可直接入库。
+
+--result-json <path>
+    下载结束后把最终结果写到该路径（原子写入，先写临时文件再 rename）。
+    无论成功、部分失败、解析失败还是被取消都会写，便于调用方对账。
+```
+
+`--result-json` 的格式（版本 1，字段只增不改）：
+
+``` json
+{
+  "version": "1",
+  "generated_at": "2026-11-25T21:15:03+08:00",
+  "state": "succeeded | partial | failed | canceled",
+  "outputs": [
+    { "path": "/abs/碧诗/标题.mkv", "kind": "video", "container": "mkv", "bytes": 87818471 }
+  ],
+  "targets": [
+    {
+      "media_id": "BV1xx411c7mD", "bv": "BV1xx411c7mD", "page": 1, "title": "标题",
+      "state": "succeeded", "outputs": [ ... ]
+    }
+  ]
+}
+```
+
+`outputs` 是全部目标的聚合（只读一层即可入库），`targets` 保留逐目标明细与失败原因。
+产物以「文件是否真实存在」为准：合并后删除的分离音轨、被 `--no-danmaku` 关掉的附属资源都不会出现。
+
+退出码：`0` 全部成功 / `1` 有失败 / `2` 参数或环境错误 / `130` 被信号取消。
+
 ## 容器格式
 
 根据视频编码自动选择容器格式：

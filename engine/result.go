@@ -1,5 +1,7 @@
 package engine
 
+import "github.com/Felix2yu/bili-dl/site"
+
 // State 是一次下载的终态。
 type State string
 
@@ -14,18 +16,8 @@ const (
 	StateCanceled State = "canceled"
 )
 
-// Output 是一条已经落盘的产物。
-// 显式返回产出，让调用方不必扫描目录差集来判断「下到了什么」。
-type Output struct {
-	// Path 是绝对路径。
-	Path string `json:"path"`
-	// Kind 取值：video / audio / cover / danmaku / subtitle / image。
-	Kind string `json:"kind"`
-	// Container 是容器扩展名，不含点；非媒体文件为空。
-	Container string `json:"container,omitempty"`
-	// Bytes 是文件大小。
-	Bytes int64 `json:"bytes"`
-}
+// Output 复用 site 的产物定义，保证站点适配器可以直接返回、无需转换。
+type Output = site.Output
 
 // Result 是一次下载的完整结果。
 type Result struct {
