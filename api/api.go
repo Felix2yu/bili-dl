@@ -346,6 +346,37 @@ func matchCodec(codecs string, codec string) bool {
 	}
 }
 
+// pickCodec 按 --download-vcodec-priority 的顺序，返回第一档在候选流里存在的编码。
+// restrict 为 false 表示不限制编码（优先级与旧 -codec 都为空）。
+// 优先级列表全部落空时返回 ("", true)，让调用方得到空集并报错，而不是悄悄选别的编码。
+func pickCodec(streams []dashStream, priorities []string, legacy string) (codec string, restrict bool) {
+	if len(priorities) > 0 {
+		for _, candidate := range priorities {
+			for _, s := range streams {
+				if matchCodec(s.Codecs, candidate) {
+					return candidate, true
+				}
+			}
+		}
+		return "", true
+	}
+	if legacy != "" {
+		return legacy, true
+	}
+	return "", false
+}
+
+// codecErrorLabel 只用于错误消息，让用户看到实际尝试过的编码范围。
+func codecErrorLabel() string {
+	if len(c.VCodecPriority) > 0 {
+		return strings.Join(c.VCodecPriority, ",")
+	}
+	if c.Codec != "" {
+		return c.Codec
+	}
+	return "任意"
+}
+
 func codecExt(codecs string) string {
 	if strings.HasPrefix(codecs, "av01") {
 		return "mkv"
@@ -441,19 +472,29 @@ func GetStream(v Video) (*Stream, error) {
 			return nil, fmt.Errorf("no video streams available")
 		}
 
-		// Filter by resolution and codec
-		var filtered []dashStream
+		// 先按分辨率收窄，再按编码优先级取第一档有候选的编码。
+		// 不能只用 --vcodec 的单一编码硬过滤：视频可能没有 AV1，
+		// 这时应回退到 hevc/avc，而不是直接报「没有找到匹配的视频流」。
+		var byResolution []dashStream
 		for _, s := range videoStreams {
-			if !matchResolution(s.ID, s.Width, c.Resolution) {
-				continue
+			if matchResolution(s.ID, s.Width, c.Resolution) {
+				byResolution = append(byResolution, s)
 			}
-			if !matchCodec(s.Codecs, c.Codec) {
+		}
+		if len(byResolution) == 0 {
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, codecErrorLabel())
+		}
+
+		codec, restrict := pickCodec(byResolution, c.VCodecPriority, c.Codec)
+		var filtered []dashStream
+		for _, s := range byResolution {
+			if restrict && !matchCodec(s.Codecs, codec) {
 				continue
 			}
 			filtered = append(filtered, s)
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, c.Codec)
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, codecErrorLabel())
 		}
 
 		// -q 指定画质 id 时优先精确命中；未指定或无命中则按编码优先级 + 分辨率择优。

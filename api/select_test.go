@@ -30,6 +30,46 @@ func Test_selectVideoStream(t *testing.T) {
 	}
 }
 
+func Test_pickCodec(t *testing.T) {
+	streams := []dashStream{
+		{ID: 80, Codecs: "hev1.1.6", Width: 1280, Height: 720},
+		{ID: 80, Codecs: "avc064032", Width: 1280, Height: 720},
+	}
+
+	cases := []struct {
+		name       string
+		streams    []dashStream
+		priorities []string
+		legacy     string
+		wantCodec  string
+		wantRestr  bool
+	}{
+		{"无优先级无 legacy 时不限制编码", streams, nil, "", "", false},
+		{"无优先级时沿用旧 codec", streams, nil, "hevc", "hevc", true},
+		{"优先级首选存在时直接选中", streams, []string{"hevc", "avc"}, "", "hevc", true},
+		{"首选 av1 缺失时回退 hevc", streams, []string{"av1", "hevc", "avc"}, "", "hevc", true},
+		{"有优先级时忽略 --vcodec 的单一编码", streams, []string{"av1", "hevc", "avc"}, "av1", "hevc", true},
+		{
+			"优先级列表全部落空时返回强制空集",
+			[]dashStream{{Codecs: "vp09.00.10.08"}},
+			[]string{"av1", "hevc", "avc"},
+			"",
+			"",
+			true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			codec, restrict := pickCodec(tc.streams, tc.priorities, tc.legacy)
+			if codec != tc.wantCodec || restrict != tc.wantRestr {
+				t.Fatalf("pickCodec() = (%q, %v), 期望 (%q, %v)",
+					codec, restrict, tc.wantCodec, tc.wantRestr)
+			}
+		})
+	}
+}
+
 func Test_videoOptions(t *testing.T) {
 	got := videoOptions([]dashStream{
 		{ID: 116, Codecs: "av01.0.05M.08", Width: 1920, Height: 1080, Bandwidth: 3000000},
