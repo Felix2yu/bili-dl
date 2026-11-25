@@ -54,7 +54,7 @@ func TestResolveShellReportsNoPlayable(t *testing.T) {
 	if !ok || se.Code != site.ErrUpstreamChanged {
 		t.Fatalf("应报 upstream_changed，实际 %v", err)
 	}
-	if !strings.Contains(se.Message, "风控壳") {
+	if !strings.Contains(se.Message, "没有视频直链") {
 		t.Errorf("错误信息应说明原因，实际 %q", se.Message)
 	}
 }
@@ -92,6 +92,30 @@ func TestResolveShortLinkAndPlayableStreams(t *testing.T) {
 	}
 	if set.Videos[0].Kind != "video" || set.Videos[0].Headers.Get("Referer") != "https://www.douyin.com/" {
 		t.Errorf("码流字段错误: %+v", set.Videos[0])
+	}
+}
+
+func TestResolveUsesTTwidSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Cookie"), "ttwid=") {
+			http.SetCookie(w, &http.Cookie{Name: "ttwid", Value: "session-1", Path: "/"})
+			_, _ = fmt.Fprint(w, shellHTML())
+			return
+		}
+		_, _ = fmt.Fprint(w, playableHTML())
+	}))
+	defer srv.Close()
+
+	media, err := NewAdapter().Resolve(context.Background(), srv.URL+"/video/"+aweme, site.ResolveOptions{})
+	if err != nil {
+		t.Fatalf("带 ttwid 的二次请求应拿到直链: %v", err)
+	}
+	if len(media) != 1 || media[0].Title != "看三国杀插画猜人物" {
+		t.Fatalf("解析结果错误: %+v", media)
+	}
+	set, err := NewAdapter().Streams(context.Background(), media[0], site.Selection{})
+	if err != nil || len(set.Videos) != 1 {
+		t.Fatalf("码流错误: %+v %v", set, err)
 	}
 }
 

@@ -1,18 +1,20 @@
 // Package douyin 是抖音的站点适配器。
 //
-// 能力边界：分享页首屏通常只有 window._ROUTER_DATA 壳参数（itemId、share_sign），
-// 不含 aweme_detail/play_addr；真正的详情 API 需要 a_bogus 签名。本适配器不伪造签名，
-// 而是在拿不到直链时明确返回 upstream_changed 并说明原因，避免把风控误报成「链接不支持」。
+// 取数路径：分享页第一次请求只返回 window._ROUTER_DATA 壳并下发 ttwid，
+// 带这个 Cookie 再请求一次才返回 videoInfoRes.item_list[].video.play_addr.url_list。
+// 因此这里必须用带 CookieJar 的会话连续请求两次，而不是两个无状态请求。
 //
-// 同时保留通用提取：若某天分享页或 SSR 数据里重新出现 play_addr/download_addr，
-// 无需改代码即可解析出直链；每日 smoke 探针会记录这一变化。
+// 详情页 API（aweme/detail）的 Argus 签名体系不在这里伪造；分享页路径足够拿到直链。
+// 若两次请求后仍没有直链，明确返回 upstream_changed 说明原因。
 package douyin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"sort"
@@ -28,7 +30,7 @@ const StateMarker = "window._ROUTER_DATA"
 const (
 	mobileUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 " +
 		"(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-	noPlayable = "抖音分享页只有风控壳、没有视频直链（详情接口需要 a_bogus 签名或登录态）"
+	noPlayable = "抖音分享页两次请求都没有视频直链（ttwid 会话可能被风控，或分享页结构已改）"
 )
 
 var (
@@ -75,13 +77,9 @@ func (a *Adapter) Match(rawURL string) bool {
 	return false
 }
 
-// Resolve 展开分享短链并尝试从首屏数据里提取直链。
-// 当前抖音风控下通常拿不到，返回明确的 upstream_changed。
+// Resolve 展开分享短链，用同一会话连续取两次分享页，再从首屏数据里提取直链。
 func (a *Adapter) Resolve(ctx context.Context, rawURL string, opt site.ResolveOptions) ([]*site.Media, error) {
-	client := opt.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := sessionClient(opt.Client)
 
 	target, err := a.canonicalURL(ctx, client, rawURL, opt.Auth)
 	if err != nil {
@@ -213,7 +211,52 @@ func (a *Adapter) canonicalURL(ctx context.Context, client *http.Client, raw str
 	return final, nil
 }
 
+// sessionClient 给调用方注入的客户端套上 CookieJar，复用其 Transport（代理、TLS 配置）。
+// 抖音的 ttwid 必须通过同一会话带回，两个无状态请求只会拿到两次空壳。
+func sessionClient(base *http.Client) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return base
+	}
+	return &http.Client{
+		Jar:           jar,
+		Transport:     base.Transport,
+		CheckRedirect: base.CheckRedirect,
+		Timeout:       base.Timeout,
+	}
+}
+
 func fetchState(ctx context.Context, client *http.Client, target string, auth *site.Auth) (any, error) {
+	body, err := fetchPage(ctx, client, target, auth)
+	if err != nil {
+		return nil, err
+	}
+	// 第一响通常是壳（只有 _ROUTER_DATA 参数），带 ttwid 再取一次才有 videoInfoRes。
+	if !hasPlayableHint(body) {
+		body, err = fetchPage(ctx, client, target, auth)
+		if err != nil {
+			return nil, err
+		}
+	}
+	raw, err := ssr.ExtractObject(body, StateMarker)
+	if err != nil {
+		return nil, site.WrapError(site.ErrUpstreamChanged, err, "首屏数据提取失败")
+	}
+	var state any
+	if err := json.Unmarshal(ssr.SanitizeUndefined(raw), &state); err != nil {
+		return nil, site.WrapError(site.ErrUpstreamChanged, err, "首屏数据不是合法 JSON")
+	}
+	return state, nil
+}
+
+func hasPlayableHint(body []byte) bool {
+	return bytes.Contains(body, []byte("videoInfoRes")) || bytes.Contains(body, []byte("play_addr"))
+}
+
+func fetchPage(ctx context.Context, client *http.Client, target string, auth *site.Auth) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, site.WrapError(site.ErrUnsupportedURL, err, "构造页面请求失败")
@@ -245,15 +288,7 @@ func fetchState(ctx context.Context, client *http.Client, target string, auth *s
 	if err != nil {
 		return nil, site.WrapError(site.ErrNetwork, err, "读取分享页失败")
 	}
-	raw, err := ssr.ExtractObject(body, StateMarker)
-	if err != nil {
-		return nil, site.WrapError(site.ErrUpstreamChanged, err, "首屏数据提取失败")
-	}
-	var state any
-	if err := json.Unmarshal(ssr.SanitizeUndefined(raw), &state); err != nil {
-		return nil, site.WrapError(site.ErrUpstreamChanged, err, "首屏数据不是合法 JSON")
-	}
-	return state, nil
+	return body, nil
 }
 
 // collectPlayable 在首屏 JSON 里递归找 play_addr/download_addr 的 url_list。

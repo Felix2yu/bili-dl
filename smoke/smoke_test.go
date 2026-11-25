@@ -10,7 +10,6 @@ package smoke
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -26,8 +25,8 @@ import (
 // 默认用长期稳定的公开内容；可用环境变量覆盖（例如换成自己的测试稿）。
 const (
 	defaultBilibili = "https://www.bilibili.com/video/BV1GJ411x7h7"
-	// jack 的第一条推文：纯文字、永远存在，用来探「syndication 端点是否还活着」。
-	defaultX = "https://x.com/jack/status/20"
+	// 用户验证过的视频推文：同时探 syndication 端点与 variants 结构；过期时用 SMOKE_X_URL 覆盖。
+	defaultX = "https://x.com/marypeters7615/status/2125559167767199885?a=_fvNfoTHHiRG6F7BJvo&s=46"
 	// 用户验证过的正文页直链（短链路径由离线单测覆盖）；token 过期时用 SMOKE_XHS_URL 覆盖。
 	defaultXHS = "https://www.xiaohongshu.com/explore/6b06d8f2000000002b006721" +
 		"?xsec_token=CBt9QfeBEeel3ucFVeAuQAAvyXXhYBdVNOgscQ3BNbreI=&xsec_source=app_share"
@@ -154,31 +153,39 @@ func TestXiaohongshuResolveAndStream(t *testing.T) {
 	t.Logf("%s | %s | 码流 %d 条，首条=%s", media[0].ID, media[0].Title, len(set.Videos), set.Videos[0].URL[:min(len(set.Videos[0].URL), 80)])
 }
 
-// TestDouyinShellProbe 不把「拿不到直链」当成失败：当前抖音分享页本来就只有风控壳。
-// 真正的信号是壳结构改变或意外拿到了直链——后者意味着可以放开完整下载。
-func TestDouyinShellProbe(t *testing.T) {
+// TestDouyinResolveAndStream 验证 ttwid 会话二次请求能取到 videoInfoRes 里的直链。
+func TestDouyinResolveAndStream(t *testing.T) {
 	raw := envOr("SMOKE_DOUYIN_URL", defaultDouyin)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
 	eng := engine.New(engine.Options{}).Register(douyin.NewAdapter())
-	media, err := eng.Resolve(ctx, raw, site.ResolveOptions{})
-	if err == nil {
-		t.Logf("抖音首屏已暴露直链（%d 条媒体），可以考虑启用完整下载", len(media))
-		return
-	}
-	switch engine.CodeOf(err) {
-	case engine.CodeNetwork:
-		t.Skipf("网络不可达：%v", err)
-	case engine.CodeUpstreamChanged:
-		if strings.Contains(err.Error(), "风控壳") {
-			t.Logf("仍是风控壳，符合当前预期：%v", err)
-			return
+	// 刚下过大文件时抖音会短暂限流，给两次机会；两次都失败才算结构有问题。
+	var media []*site.Media
+	var err error
+	for attempt := 1; attempt <= 2; attempt++ {
+		media, err = eng.Resolve(ctx, raw, site.ResolveOptions{})
+		if err == nil {
+			break
 		}
-		t.Fatalf("抖音首屏结构已变，需要重新评估：%v", err)
-	case engine.CodeAuthRequired:
-		t.Logf("需要登录态，符合受限内容预期：%v", err)
-	default:
-		t.Fatalf("解析失败（%s）：%v", engine.CodeOf(err), err)
+		if attempt == 2 {
+			switch engine.CodeOf(err) {
+			case engine.CodeNetwork, engine.CodeAuthRequired:
+				t.Skipf("网络或登录态受限，无法据此判断结构：%v", err)
+			default:
+				t.Fatalf("解析失败（%s）：%v", engine.CodeOf(err), err)
+			}
+		}
 	}
+	if len(media) == 0 || media[0].ID == "" {
+		t.Fatal("解析结果里没有作品")
+	}
+	set, err := eng.Streams(ctx, media[0], site.Selection{})
+	if err != nil {
+		t.Fatalf("取流失败（play_addr 结构可能已变）：%v", err)
+	}
+	if len(set.Videos) == 0 {
+		t.Fatal("没有可用视频流")
+	}
+	t.Logf("%s | %s | 码流 %d 条，首条=%s", media[0].ID, media[0].Title, len(set.Videos), set.Videos[0].URL[:min(len(set.Videos[0].URL), 80)])
 }
