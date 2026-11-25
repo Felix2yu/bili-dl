@@ -1,4 +1,4 @@
-package api
+package bilibili
 
 import (
 	"context"
@@ -366,17 +366,6 @@ func pickCodec(streams []dashStream, priorities []string, legacy string) (codec 
 	return "", false
 }
 
-// codecErrorLabel 只用于错误消息，让用户看到实际尝试过的编码范围。
-func codecErrorLabel() string {
-	if len(c.VCodecPriority) > 0 {
-		return strings.Join(c.VCodecPriority, ",")
-	}
-	if c.Codec != "" {
-		return c.Codec
-	}
-	return "任意"
-}
-
 func codecExt(codecs string) string {
 	if strings.HasPrefix(codecs, "av01") {
 		return "mkv"
@@ -457,7 +446,14 @@ func fetchDash(v Video) (*biliDashResp, error) {
 	return &ugc, nil
 }
 
+// GetStream 用当前全局配置选流，保留旧签名供 CLI 与 bili-history 使用。
+// 新代码应调用 currentStreamConfig().getStream 或直接构造 streamConfig。
 func GetStream(v Video) (*Stream, error) {
+	return currentStreamConfig().getStream(v)
+}
+
+// getStream 按显式配置选流，不读任何全局变量（除 HTTP 层的凭据与取消信号）。
+func (cfg streamConfig) getStream(v Video) (*Stream, error) {
 	dashResp, err := fetchDash(v)
 	if err != nil {
 		return nil, err
@@ -466,7 +462,7 @@ func GetStream(v Video) (*Stream, error) {
 	var videoURL, vCodec string
 	var vWidth, vHeight float64
 
-	if !c.AudioOnly {
+	if !cfg.AudioOnly {
 		videoStreams := dashResp.Data.Dash.Video
 		if len(videoStreams) == 0 {
 			return nil, fmt.Errorf("no video streams available")
@@ -477,15 +473,15 @@ func GetStream(v Video) (*Stream, error) {
 		// 这时应回退到 hevc/avc，而不是直接报「没有找到匹配的视频流」。
 		var byResolution []dashStream
 		for _, s := range videoStreams {
-			if matchResolution(s.ID, s.Width, c.Resolution) {
+			if matchResolution(s.ID, s.Width, cfg.Resolution) {
 				byResolution = append(byResolution, s)
 			}
 		}
 		if len(byResolution) == 0 {
-			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, codecErrorLabel())
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", cfg.Resolution, cfg.codecLabel())
 		}
 
-		codec, restrict := pickCodec(byResolution, c.VCodecPriority, c.Codec)
+		codec, restrict := pickCodec(byResolution, cfg.VCodecPriority, cfg.Codec)
 		var filtered []dashStream
 		for _, s := range byResolution {
 			if restrict && !matchCodec(s.Codecs, codec) {
@@ -494,11 +490,11 @@ func GetStream(v Video) (*Stream, error) {
 			filtered = append(filtered, s)
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", c.Resolution, codecErrorLabel())
+			return nil, fmt.Errorf("没有找到匹配的视频流 (分辨率: %s, 编码: %s)", cfg.Resolution, cfg.codecLabel())
 		}
 
 		// -q 指定画质 id 时优先精确命中；未指定或无命中则按编码优先级 + 分辨率择优。
-		bestIdx := selectVideoStream(filtered, c.VideoQuality)
+		bestIdx := selectVideoStream(filtered, cfg.VideoQuality)
 		videoURL = filtered[bestIdx].BaseURL
 		vCodec = filtered[bestIdx].Codecs
 		vWidth = filtered[bestIdx].Width
@@ -513,7 +509,7 @@ func GetStream(v Video) (*Stream, error) {
 	if len(allAudio) == 0 {
 		return nil, fmt.Errorf("no audio streams available")
 	}
-	best := pickAudio(allAudio, c.AudioQuality)
+	best := pickAudio(allAudio, cfg.AudioQuality)
 	stream := &Stream{
 		V: videoURL, A: best.BaseURL, Video: v,
 		VCodec: vCodec, VWidth: vWidth, VHeight: vHeight,

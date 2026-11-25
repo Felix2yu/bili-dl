@@ -1,4 +1,4 @@
-package api
+package bilibili
 
 // VideoOption 是一条可选的视频码流，供调用方渲染画质选择界面。
 // Ext 是该编码实际落盘的容器，与 codecExt 一致（av1→mkv，hevc→mov，其余→mp4）。

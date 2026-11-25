@@ -1,4 +1,4 @@
-package api
+package bilibili
 
 import (
 	"encoding/json"
