@@ -6,7 +6,7 @@ import (
 )
 
 // 全局配置。api 包直接读取这些变量；由 args.go 的 Parse 统一填充。
-// 保留 bili-dl 原生字段名（Cookie/O/UP/...），新增 yutto 兼容字段。
+// 保留 liuying-engine 原生字段名（Cookie/O/UP/...），新增 yutto 兼容字段。
 var (
 	// 认证：SESSDATA 来自 -c 或从 --auth-file 指向的 TOML 读取。
 	// 该值绝不出现在任何日志或输出中。

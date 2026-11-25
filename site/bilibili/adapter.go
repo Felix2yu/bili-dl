@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // Adapter 是哔哩哔哩站点的 site.Adapter 与 site.StreamProvider 实现。

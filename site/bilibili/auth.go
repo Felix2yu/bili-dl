@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/auth"
+	"github.com/Felix2yu/liuying-engine/auth"
 )
 
 // LoadSessdata 从 yutto 兼容的 auth.toml 读取指定 profile 的 SESSDATA。

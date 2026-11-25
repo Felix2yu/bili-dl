@@ -3,7 +3,7 @@ package bilibili
 import (
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/liuying-engine/c"
 )
 
 // streamConfig 是一次选流所需的全部输入。

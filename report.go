@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // reportVersion 是 --result-json 的格式版本。字段只增不改；

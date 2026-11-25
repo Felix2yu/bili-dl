@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/api"
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/util"
+	"github.com/Felix2yu/liuying-engine/api"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/util"
 )
 
 // 退出码：0 全部成功；1 有失败；2 参数/环境错误；130 被信号取消。
@@ -119,8 +119,8 @@ func run(args []string) int {
 			flushReport(false)
 			return exitFailed
 		}
-		fmt.Fprintln(os.Stderr, "用法: bili-dl [--batch] <url|BV号|av号|b23短链> [-d 下载目录] [选项]")
-		fmt.Fprintln(os.Stderr, "      bili-dl -up <mid> [-d 下载目录]  # 下载 UP 主全部投稿")
+		fmt.Fprintln(os.Stderr, "用法: liuying-engine [--batch] <url|BV号|av号|b23短链> [-d 下载目录] [选项]")
+		fmt.Fprintln(os.Stderr, "      liuying-engine -up <mid> [-d 下载目录]  # 下载 UP 主全部投稿")
 		return exitUsage
 	}
 

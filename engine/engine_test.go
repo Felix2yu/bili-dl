@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // fakeAdapter 是最小适配器，用于验证注册表与引擎的路由行为。

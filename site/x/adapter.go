@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // DefaultEndpoint 是公开发布用的 tweet-result 端点。

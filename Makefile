@@ -1,10 +1,10 @@
-# bili-dl —— 目标约定见 Felix2yu/.github/docs/makefile.md
+# liuying-engine —— 目标约定见 Felix2yu/.github/docs/makefile.md
 #
 # 七个必备目标：build / dev / test / lint / fmt / docker / clean
 # 其余目标按仓库自身需要添加。
 .PHONY: build dev test lint lint-strict fmt docker clean
 
-BIN  := bin/bili-dl
+BIN  := bin/liuying-engine
 MAIN := .
 
 ## 产出 $(BIN)。CLI 工具，无镜像（发布走 Release 二进制）

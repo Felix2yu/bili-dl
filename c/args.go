@@ -10,7 +10,7 @@ import (
 // Parse 解析命令行参数，填充 c 包的全局配置。
 //
 // 设计要点：
-//  1. 同时接受 yutto 风格（--batch <url> -d <dir> -q 127 ...）与 bili-dl 原生风格
+//  1. 同时接受 yutto 风格（--batch <url> -d <dir> -q 127 ...）与 liuying-engine 原生风格
 //     （-bv BVxxx -o <dir> -c SESSDATA ...）。
 //  2. 未知参数一律忽略，不返回错误——流影的 extraArgs 可能透传任意 yutto 参数，
 //     Go 的 flag 包遇到未知参数会 exit 2，这里必须避免。
@@ -31,7 +31,7 @@ func Parse(args []string) {
 		"tp": true, "auth-file": true, "auth-profile": true,
 		// 结构化结果输出：最终产物清单的写入路径
 		"result-json": true,
-		// bili-dl 原生
+		// liuying-engine 原生
 		"c": true, "up": true, "o": true, "j": true, "bv": true,
 		"resolution": true, "codec": true, "rate": true,
 		// PGC 番剧/剧集
@@ -142,7 +142,7 @@ func applyFlag(key, value string, provided bool) {
 	case "collection":
 		Collection = boolValue(value, provided)
 
-	// ---- bili-dl 原生 ----
+	// ---- liuying-engine 原生 ----
 	case "c":
 		Cookie = value
 	case "up":

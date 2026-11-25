@@ -4,7 +4,7 @@
 // 也不 import 任何具体站点包——具体站点由调用方通过 Register 显式装配。
 //
 // 并发安全：Engine 不含包级可变状态，可被多 goroutine 共享；
-// 这是对 bili-dl 旧版「配置走 c 包全局变量」的结构性修正。
+// 这是对 liuying-engine 旧版「配置走 c 包全局变量」的结构性修正。
 package engine
 
 import (
@@ -12,7 +12,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // Options 是引擎级配置（与单次任务无关）。

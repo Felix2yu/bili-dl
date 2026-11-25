@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Felix2yu/bili-dl/site"
+import "github.com/Felix2yu/liuying-engine/site"
 
 // Request 描述一次下载任务。站点无关：适配器从 site.Media 与 Selection 里取所需信息。
 type Request struct {

@@ -1,8 +1,8 @@
-# bili-dl
+# liuying-engine
 
 ## 安装
 ``` shell
-go install github.com/Felix2yu/bili-dl@latest
+go install github.com/Felix2yu/liuying-engine@latest
 ```
 
 ## 注意
@@ -98,22 +98,22 @@ go install github.com/Felix2yu/bili-dl@latest
 
 ``` shell
 # 下载指定BV号视频(自动选择最高分辨率和最优编码)
-bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -o /path/to/save
+liuying-engine -bv BV1iyQhB5Eze -c "你的SESSDATA" -o /path/to/save
 
 # 下载多个BV号视频
-bili-dl -bv "BV1iyQhB5Eze,BV1BzQhBmEtK" -c "你的SESSDATA" -o /path/to/save -j 3
+liuying-engine -bv "BV1iyQhB5Eze,BV1BzQhBmEtK" -c "你的SESSDATA" -o /path/to/save -j 3
 
 # 通过UP主mid下载该UP所有视频
-bili-dl -up 3546944890734614 -c "你的SESSDATA" -o /path/to/save -j 3
+liuying-engine -up 3546944890734614 -c "你的SESSDATA" -o /path/to/save -j 3
 
 # 指定分辨率和编码
-bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -resolution 1080p -codec avc
+liuying-engine -bv BV1iyQhB5Eze -c "你的SESSDATA" -resolution 1080p -codec avc
 
 # 仅下载音频
-bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -audio-only
+liuying-engine -bv BV1iyQhB5Eze -c "你的SESSDATA" -audio-only
 
 # 仅查看DASH信息(不下载)
-bili-dl -bv BV1iyQhB5Eze -c "你的SESSDATA" -i
+liuying-engine -bv BV1iyQhB5Eze -c "你的SESSDATA" -i
 ```
 
 ## 许可证

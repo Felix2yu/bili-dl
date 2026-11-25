@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Felix2yu/bili-dl/site"
+import "github.com/Felix2yu/liuying-engine/site"
 
 // Event 复用 site 的事件定义，避免「引擎一套事件、站点一套事件」两处维护。
 type Event = site.Event

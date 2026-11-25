@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/liuying-engine/c"
 )
 
 var testVideo = Video{BV: "BV1uP4y1S7ps", Cid: "873198432", Title: "会有人不喜欢玛奇玛？硬撑罢了！"}

@@ -8,14 +8,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/auth"
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/engine"
-	"github.com/Felix2yu/bili-dl/site"
-	"github.com/Felix2yu/bili-dl/site/bilibili"
-	"github.com/Felix2yu/bili-dl/site/douyin"
-	"github.com/Felix2yu/bili-dl/site/x"
-	"github.com/Felix2yu/bili-dl/site/xiaohongshu"
+	"github.com/Felix2yu/liuying-engine/auth"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/engine"
+	"github.com/Felix2yu/liuying-engine/site"
+	"github.com/Felix2yu/liuying-engine/site/bilibili"
+	"github.com/Felix2yu/liuying-engine/site/douyin"
+	"github.com/Felix2yu/liuying-engine/site/x"
+	"github.com/Felix2yu/liuying-engine/site/xiaohongshu"
 )
 
 // engineHandles 判断这批输入是否该交给通用引擎。

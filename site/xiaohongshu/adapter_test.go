@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 const noteID = "6b06d8f2000000002b006721"

@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // Registry 保存已装配的适配器，按注册顺序匹配 URL。

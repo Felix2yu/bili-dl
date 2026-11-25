@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/liuying-engine/c"
 )
 
 // 与流影 LibraryPath.splitPageLabel 的两条正则保持一致的产出形态：

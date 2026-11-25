@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/api"
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/engine"
-	"github.com/Felix2yu/bili-dl/site"
-	"github.com/Felix2yu/bili-dl/site/douyin"
-	"github.com/Felix2yu/bili-dl/site/x"
-	"github.com/Felix2yu/bili-dl/site/xiaohongshu"
+	"github.com/Felix2yu/liuying-engine/api"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/engine"
+	"github.com/Felix2yu/liuying-engine/site"
+	"github.com/Felix2yu/liuying-engine/site/douyin"
+	"github.com/Felix2yu/liuying-engine/site/x"
+	"github.com/Felix2yu/liuying-engine/site/xiaohongshu"
 )
 
 // 默认用长期稳定的公开内容；可用环境变量覆盖（例如换成自己的测试稿）。

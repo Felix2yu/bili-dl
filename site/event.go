@@ -3,7 +3,7 @@ package site
 // Event 是一次下载过程中的事件。
 //
 // 它同时服务于两条通路：进程内回调（--progress-json 之外）与 stdout 的 NDJSON。
-// 字段与 json tag 延续 bili-dl 既有 NDJSON 契约，只做新增不做改名，
+// 字段与 json tag 延续 liuying-engine 既有 NDJSON 契约，只做新增不做改名，
 // 因此旧消费方不受影响。
 type Event struct {
 	// Event 取值：start / progress / done / error / state。

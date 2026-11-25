@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // videoTweet 是带视频的推文响应样本。

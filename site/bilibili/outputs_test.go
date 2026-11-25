@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // withTempOutputDir 把 c.O 指向临时目录，测试结束后还原。

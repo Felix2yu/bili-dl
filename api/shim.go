@@ -1,14 +1,14 @@
 // Package api 是哔哩哔哩实现的兼容层。
 //
 // 历史背景：这个包原本同时是「站点逻辑」与「对外 API」，bili-history 直接依赖它
-// （github.com/Felix2yu/bili-dl/api 与 /c）。重构把站点逻辑整体迁到
+// （github.com/Felix2yu/liuying-engine/api 与 /c）。重构把站点逻辑整体迁到
 // site/bilibili 之后，本包只保留导出符号的转发，确保既有调用方零改动。
 //
 // 约束：本文件只允许出现类型别名与一行转发，不得再写业务逻辑。
 // 新代码请直接使用 site 与 engine 包。
 package api
 
-import "github.com/Felix2yu/bili-dl/site/bilibili"
+import "github.com/Felix2yu/liuying-engine/site/bilibili"
 
 // 类型别名：用别名而非新类型，保证与 site/bilibili 完全等价，
 // 调用方传值时不需要任何转换。

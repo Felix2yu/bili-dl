@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/auth"
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/site"
-	"github.com/Felix2yu/bili-dl/util"
+	"github.com/Felix2yu/liuying-engine/auth"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/site"
+	"github.com/Felix2yu/liuying-engine/util"
 )
 
 var client = &http.Client{

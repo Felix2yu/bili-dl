@@ -9,7 +9,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // Profile 是一个站点账号的凭据集合。

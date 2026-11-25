@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/liuying-engine/c"
 )
 
 func TestParseInput(t *testing.T) {

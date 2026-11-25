@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/c"
+	"github.com/Felix2yu/liuying-engine/c"
 )
 
 // DownloadExtras 下载弹幕、字幕、封面。三者都是 best-effort：

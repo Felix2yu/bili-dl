@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Felix2yu/bili-dl/site"
+import "github.com/Felix2yu/liuying-engine/site"
 
 // State 是一次下载的终态。
 type State string

@@ -21,8 +21,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Felix2yu/bili-dl/site"
-	"github.com/Felix2yu/bili-dl/site/ssr"
+	"github.com/Felix2yu/liuying-engine/site"
+	"github.com/Felix2yu/liuying-engine/site/ssr"
 )
 
 // StateMarker 是分享页首屏数据所在的全局变量。

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 const aweme = "7710557661879733555"

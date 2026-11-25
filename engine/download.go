@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/fetch"
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/fetch"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // Download 是引擎的统一入口：解析 → 选流 → 传输 → 收尾。

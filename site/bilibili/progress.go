@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Felix2yu/bili-dl/c"
-	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/liuying-engine/c"
+	"github.com/Felix2yu/liuying-engine/site"
 )
 
 // ProgressEvent 复用 site 的事件定义：字段与 --progress-json 的 NDJSON 一一对应，
@@ -21,7 +21,7 @@ var (
 	progressHook func(ProgressEvent)
 )
 
-// SetProgressHook 注册进程内进度回调，供把 bili-dl 当库嵌入的调用方使用。
+// SetProgressHook 注册进程内进度回调，供把 liuying-engine 当库嵌入的调用方使用。
 // 传 nil 取消注册。与 --progress-json 的 NDJSON 输出互不影响，可同时生效。
 func SetProgressHook(fn func(ProgressEvent)) {
 	progressMu.Lock()
