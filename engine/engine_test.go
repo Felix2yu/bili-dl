@@ -3,6 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -148,6 +153,66 @@ func TestErrorWithRetryAfterForcesRetryable(t *testing.T) {
 	}
 	if e.RetryAfter != 90*time.Second {
 		t.Errorf("RetryAfter 未写入: %v", e.RetryAfter)
+	}
+}
+
+// streamAdapter 在 fakeAdapter 之上补 StreamProvider，用于走完整下载链路。
+type streamAdapter struct {
+	*fakeAdapter
+	set *site.StreamSet
+}
+
+func (s *streamAdapter) Streams(context.Context, *site.Media, site.Selection) (*site.StreamSet, error) {
+	return s.set, nil
+}
+
+func TestDownloadEventsUseStreamKind(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, "payload")
+	}))
+	defer srv.Close()
+
+	for _, kind := range []string{"video", "image", "audio"} {
+		t.Run(kind, func(t *testing.T) {
+			m := &site.Media{
+				Site: "a", ID: "id1", Title: "标题",
+				Parts: []site.Part{{Index: 1, Title: "标题"}},
+			}
+			a := &streamAdapter{
+				fakeAdapter: &fakeAdapter{name: "a", hosts: []string{"https://a"}, site: m},
+				set: &site.StreamSet{Videos: []site.Stream{{
+					URL: srv.URL, Codec: "avc1", Container: "mp4", Kind: kind,
+				}}},
+			}
+			e := New(Options{}).Register(a)
+			var events []Event
+			out := t.TempDir()
+			res, err := e.Download(context.Background(), Request{
+				URL: "https://a/v/1", OutputDir: out,
+			}, func(ev Event) { events = append(events, ev) })
+			if err != nil {
+				t.Fatalf("Download 失败: %v", err)
+			}
+			if len(res.Outputs) != 1 || res.Outputs[0].Kind != kind {
+				t.Fatalf("产物 Kind 不符: %+v", res.Outputs)
+			}
+			st, err := os.Stat(filepath.Join(out, "a", "标题.mp4"))
+			if err != nil || st.Size() != int64(len("payload")) {
+				t.Errorf("文件未正确落盘: %v %+v", err, st)
+			}
+			seen := map[string]bool{}
+			for _, ev := range events {
+				if ev.Kind != kind {
+					t.Errorf("事件 %s 的 Kind=%q，期望 %q", ev.Event, ev.Kind, kind)
+				}
+				seen[ev.Event] = true
+			}
+			for _, name := range []string{"start", "progress", "done"} {
+				if !seen[name] {
+					t.Errorf("缺少 %s 事件", name)
+				}
+			}
+		})
 	}
 }
 

@@ -10,6 +10,7 @@ package smoke
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	"github.com/Felix2yu/bili-dl/c"
 	"github.com/Felix2yu/bili-dl/engine"
 	"github.com/Felix2yu/bili-dl/site"
+	"github.com/Felix2yu/bili-dl/site/douyin"
 	"github.com/Felix2yu/bili-dl/site/x"
+	"github.com/Felix2yu/bili-dl/site/xiaohongshu"
 )
 
 // 默认用长期稳定的公开内容；可用环境变量覆盖（例如换成自己的测试稿）。
@@ -25,6 +28,11 @@ const (
 	defaultBilibili = "https://www.bilibili.com/video/BV1GJ411x7h7"
 	// jack 的第一条推文：纯文字、永远存在，用来探「syndication 端点是否还活着」。
 	defaultX = "https://x.com/jack/status/20"
+	// 用户验证过的正文页直链（短链路径由离线单测覆盖）；token 过期时用 SMOKE_XHS_URL 覆盖。
+	defaultXHS = "https://www.xiaohongshu.com/explore/6b06d8f2000000002b006721" +
+		"?xsec_token=CBt9QfeBEeel3ucFVeAuQAAvyXXhYBdVNOgscQ3BNbreI=&xsec_source=app_share"
+	// 抖音样本只探「壳是否仍然没有直链」；过期时用 SMOKE_DOUYIN_URL 覆盖。
+	defaultDouyin = "6.64 复制打开抖音 https://v.douyin.com/fy9rPadJ1SU/ :9pm"
 )
 
 func envOr(key, fallback string) string {
@@ -111,4 +119,66 @@ func TestXEndpointAlive(t *testing.T) {
 		t.Fatal("没有可用视频流")
 	}
 	t.Logf("%s | 码流 %d 条，首条 HLS=%v", media[0].Title, len(set.Videos), set.Videos[0].HLS)
+}
+
+// TestXiaohongshuResolveAndStream 验证短链展开、__INITIAL_STATE__ 提取和 h264 直链。
+func TestXiaohongshuResolveAndStream(t *testing.T) {
+	raw := envOr("SMOKE_XHS_URL", defaultXHS)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	eng := engine.New(engine.Options{}).Register(xiaohongshu.NewAdapter())
+	media, err := eng.Resolve(ctx, raw, site.ResolveOptions{})
+	if err != nil {
+		switch engine.CodeOf(err) {
+		case engine.CodeNetwork:
+			t.Skipf("网络不可达：%v", err)
+		case engine.CodeAuthRequired:
+			t.Skipf("样本 token 过期或被风控要求登录，换一个 SMOKE_XHS_URL：%v", err)
+		case engine.CodeUpstreamChanged:
+			t.Fatalf("小红书首屏结构或短链已变：%v", err)
+		default:
+			t.Fatalf("解析失败（%s）：%v", engine.CodeOf(err), err)
+		}
+	}
+	if len(media) == 0 || media[0].ID == "" {
+		t.Fatal("解析结果里没有笔记")
+	}
+	set, err := eng.Streams(ctx, media[0], site.Selection{})
+	if err != nil {
+		t.Fatalf("取流失败（h264 结构可能已变）：%v", err)
+	}
+	if len(set.Videos) == 0 {
+		t.Fatal("没有可用视频流")
+	}
+	t.Logf("%s | %s | 码流 %d 条，首条=%s", media[0].ID, media[0].Title, len(set.Videos), set.Videos[0].URL[:min(len(set.Videos[0].URL), 80)])
+}
+
+// TestDouyinShellProbe 不把「拿不到直链」当成失败：当前抖音分享页本来就只有风控壳。
+// 真正的信号是壳结构改变或意外拿到了直链——后者意味着可以放开完整下载。
+func TestDouyinShellProbe(t *testing.T) {
+	raw := envOr("SMOKE_DOUYIN_URL", defaultDouyin)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	eng := engine.New(engine.Options{}).Register(douyin.NewAdapter())
+	media, err := eng.Resolve(ctx, raw, site.ResolveOptions{})
+	if err == nil {
+		t.Logf("抖音首屏已暴露直链（%d 条媒体），可以考虑启用完整下载", len(media))
+		return
+	}
+	switch engine.CodeOf(err) {
+	case engine.CodeNetwork:
+		t.Skipf("网络不可达：%v", err)
+	case engine.CodeUpstreamChanged:
+		if strings.Contains(err.Error(), "风控壳") {
+			t.Logf("仍是风控壳，符合当前预期：%v", err)
+			return
+		}
+		t.Fatalf("抖音首屏结构已变，需要重新评估：%v", err)
+	case engine.CodeAuthRequired:
+		t.Logf("需要登录态，符合受限内容预期：%v", err)
+	default:
+		t.Fatalf("解析失败（%s）：%v", engine.CodeOf(err), err)
+	}
 }

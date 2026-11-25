@@ -273,7 +273,9 @@ func (a *Adapter) fetchTweet(ctx context.Context, client *http.Client, id string
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("请求推文详情失败: %w", err)
+		// 必须分类为网络错误：否则连接重置会被误报成「站点改版」，
+		// 每日 smoke 就会把偶发网络抖动当成真正的取数失效。
+		return nil, site.WrapError(site.ErrNetwork, err, "请求推文详情失败")
 	}
 	defer resp.Body.Close()
 
@@ -329,7 +331,7 @@ func follow(client *http.Client, raw string) (string, error) {
 	req.Header.Set("User-Agent", defaultUA)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", site.WrapError(site.ErrNetwork, err, "展开 t.co 短链失败")
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))

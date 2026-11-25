@@ -13,7 +13,9 @@ import (
 	"github.com/Felix2yu/bili-dl/engine"
 	"github.com/Felix2yu/bili-dl/site"
 	"github.com/Felix2yu/bili-dl/site/bilibili"
+	"github.com/Felix2yu/bili-dl/site/douyin"
 	"github.com/Felix2yu/bili-dl/site/x"
+	"github.com/Felix2yu/bili-dl/site/xiaohongshu"
 )
 
 // engineHandles 判断这批输入是否该交给通用引擎。
@@ -40,7 +42,10 @@ func engineHandles(urls []string) bool {
 // runEngine 用通用引擎下载，返回退出码。handled=false 表示没有适配器认领，
 // 调用方应回落到既有流程（从而保留「无法解析」的原有报错）。
 func runEngine(ctx context.Context, urls []string) (int, bool) {
-	eng := engine.New(engine.Options{Logger: log.Default()}).Register(x.NewAdapter())
+	eng := engine.New(engine.Options{Logger: log.Default()}).
+		Register(x.NewAdapter()).
+		Register(xiaohongshu.NewAdapter()).
+		Register(douyin.NewAdapter())
 
 	outcomes := newOutcomeCollector()
 	handled := false

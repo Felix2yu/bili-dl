@@ -35,6 +35,8 @@ jobs:
         env:
           SMOKE_BILIBILI_URL: ${{ vars.SMOKE_BILIBILI_URL }}
           SMOKE_X_URL: ${{ vars.SMOKE_X_URL }}
+          SMOKE_XHS_URL: ${{ vars.SMOKE_XHS_URL }}
+          SMOKE_DOUYIN_URL: ${{ vars.SMOKE_DOUYIN_URL }}
 
       - name: 失败时开 issue
         if: failure()

@@ -125,6 +125,8 @@ type Stream struct {
 	Container string
 	// HLS 为 true 表示 URL 指向 m3u8，需由 fetch 层走 HLS 分片路径。
 	HLS bool
+	// Kind 是产物类型：video（默认）/ audio / image。图集站点用它区分单张图片。
+	Kind string
 }
 
 // Extra 是随主媒体一起下载的附属资源（封面、弹幕、字幕）。

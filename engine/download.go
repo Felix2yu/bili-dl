@@ -94,13 +94,18 @@ func (e *Engine) downloadPart(
 	if err != nil {
 		return nil, err
 	}
+	// 产物类型由适配器决定：视频、音频或图集里的单张图片。
+	kind := stream.Kind
+	if kind == "" {
+		kind = "video"
+	}
 
 	outPath := e.outPath(m, part, req, stream)
 	sink.Emit(Event{
 		Event:     "start",
 		MediaID:   m.ID,
 		Page:      part.Index,
-		Kind:      "video",
+		Kind:      kind,
 		Message:   filepath.Base(outPath),
 		Timestamp: time.Now().UnixMilli(),
 	})
@@ -121,7 +126,7 @@ func (e *Engine) downloadPart(
 					Event:     "progress",
 					MediaID:   m.ID,
 					Page:      part.Index,
-					Kind:      "video",
+					Kind:      kind,
 					Current:   done,
 					Total:     total,
 					Percent:   percent(done, total),
@@ -130,7 +135,7 @@ func (e *Engine) downloadPart(
 			},
 		})
 	} else {
-		err = e.downloadDirect(ctx, stream, outPath, m.ID, part.Index, sink)
+		err = e.downloadDirect(ctx, stream, outPath, m.ID, part.Index, kind, sink)
 	}
 	if err != nil {
 		return nil, WrapError(CodeNetwork, StageTransfer, err, "下载失败")
@@ -142,7 +147,7 @@ func (e *Engine) downloadPart(
 	}
 	out := site.Output{
 		Path:      outPath,
-		Kind:      "video",
+		Kind:      kind,
 		Container: strings.TrimPrefix(filepath.Ext(outPath), "."),
 		Bytes:     st.Size(),
 	}
@@ -150,7 +155,7 @@ func (e *Engine) downloadPart(
 		Event:     "done",
 		MediaID:   m.ID,
 		Page:      part.Index,
-		Kind:      "video",
+		Kind:      kind,
 		Message:   filepath.Base(outPath),
 		Outputs:   []site.Output{out},
 		Timestamp: time.Now().UnixMilli(),
@@ -165,6 +170,7 @@ func (e *Engine) downloadDirect(
 	outPath string,
 	mediaID string,
 	page int,
+	kind string,
 	sink EventSink,
 ) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, stream.URL, nil)
@@ -207,7 +213,7 @@ func (e *Engine) downloadDirect(
 				Event:     "progress",
 				MediaID:   mediaID,
 				Page:      page,
-				Kind:      "video",
+				Kind:      kind,
 				Current:   written,
 				Total:     total,
 				Percent:   percent(written, total),
