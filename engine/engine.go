@@ -116,16 +116,33 @@ func (e *Engine) Streams(ctx context.Context, m *site.Media, sel site.Selection)
 	return set, nil
 }
 
-// decorate 把站点适配器返回的裸错误统一成 *Error，已分类的不再包装，只补站点。
+// decorate 把站点适配器返回的错误统一成 *Error。
+// 适配器用 site.ResolveError 表达分类（不能直接依赖 engine，否则会循环），这里做映射。
 func decorate(err error, siteName string, stage Stage) error {
 	if err == nil {
 		return nil
 	}
+	// 已经是 engine.Error 的（例如内部转发的），只补站点。
 	if e := CodeOf(err); e != "" {
 		if ee, ok := err.(*Error); ok && ee.Site == "" {
 			ee.Site = siteName
 		}
 		return err
+	}
+	if se, ok := site.AsResolveError(err); ok {
+		code := Code(se.Code)
+		if code == "" {
+			code = CodeUpstreamChanged
+		}
+		return &Error{
+			Code:       code,
+			Site:       siteName,
+			Stage:      stage,
+			Retryable:  retryable[code],
+			RetryAfter: se.RetryAfter,
+			Message:    se.Message,
+			Err:        se.Err,
+		}
 	}
 	return &Error{
 		Code:      CodeUpstreamChanged,

@@ -135,7 +135,7 @@ func getWbiKeysCached() (string, string) {
 }
 
 func getWbiKeys() (string, string) {
-	req, err := newAPIRequest("https://api.bilibili.com/x/web-interface/nav")
+	req, err := newAPIRequest(apiCtx(), "https://api.bilibili.com/x/web-interface/nav")
 	if err != nil {
 		return "", ""
 	}

@@ -198,15 +198,13 @@ func videoOf(m *site.Media, sel site.Selection) (Video, error) {
 // 本期仍依赖 c 包的凭据与取消信号（HTTP 层），但选流参数已改为按调用传入，
 // 因此不同任务可以用不同的画质/编码偏好，不再互相踩参数。
 func (a *Adapter) Streams(ctx context.Context, m *site.Media, sel site.Selection) (*site.StreamSet, error) {
-	_ = ctx
-
 	v, err := videoOf(m, sel)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := streamConfigFrom(sel)
-	stream, err := cfg.getStream(v)
+	stream, err := cfg.getStreamCtx(ctx, v)
 	if err != nil {
 		return nil, err
 	}

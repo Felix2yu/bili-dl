@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Felix2yu/bili-dl/auth"
 	"github.com/Felix2yu/bili-dl/c"
 	"github.com/Felix2yu/bili-dl/site"
 	"github.com/Felix2yu/bili-dl/util"
@@ -34,8 +35,10 @@ const defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 
 // newAPIRequest 统一构造 B 站 API 请求：带 context、UA、Referer，
 // 仅在 SESSDATA 非空时才写入 cookie（避免发出 Value="" 的畸形 cookie）。
-func newAPIRequest(rawURL string) (*http.Request, error) {
-	ctx := c.Ctx
+//
+// 凭据来源优先级：context 里的按调用凭据 > c 包全局（兼容 bili-history 的嵌入调用）。
+// 这样同一进程内多个任务可以带不同账号并发，不会互相串。
+func newAPIRequest(ctx context.Context, rawURL string) (*http.Request, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -43,12 +46,30 @@ func newAPIRequest(rawURL string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", defaultUA)
+	ua := defaultUA
+	if v, ok := auth.HeaderValue(ctx, "User-Agent"); ok && v != "" {
+		ua = v
+	}
+	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if c.Cookie != "" {
-		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: c.Cookie})
+
+	sessdata := c.Cookie
+	if v, ok := auth.CookieValue(ctx, "SESSDATA"); ok && v != "" {
+		sessdata = v
+	}
+	if sessdata != "" {
+		req.AddCookie(&http.Cookie{Name: "SESSDATA", Value: sessdata})
 	}
 	return req, nil
+}
+
+// apiCtx 返回遗留路径使用的 context：优先 c.Ctx（CLI 注入取消信号），否则空 context。
+// 引擎路径不走这里，而是把调用方的 ctx 显式传下去。
+func apiCtx() context.Context {
+	if c.Ctx != nil {
+		return c.Ctx
+	}
+	return context.Background()
 }
 
 type biliVideoPage struct {
@@ -118,14 +139,17 @@ type biliVlistResp struct {
 	} `json:"data"`
 }
 
-func videoInfo(bv string) ([]byte, error) {
+func videoInfo(bv string) ([]byte, error) { return videoInfoCtx(apiCtx(), bv) }
+
+// videoInfoCtx 与 videoInfo 相同，但由调用方控制 context（取消信号与按调用凭据）。
+func videoInfoCtx(ctx context.Context, bv string) ([]byte, error) {
 	url := "https://api.bilibili.com/x/web-interface/view"
 	parse, _ := url2.Parse(url)
 	query := parse.Query()
 	query.Add("bvid", bv)
 	parse.RawQuery = query.Encode()
 	url = parse.String()
-	req, err := newAPIRequest(url)
+	req, err := newAPIRequest(ctx, url)
 
 	if err != nil {
 		log.Println(err)
@@ -200,7 +224,7 @@ func VideoForPage(v *Video, page int) (Video, error) {
 	return out, nil
 }
 
-func videoFromUP(mid string, pn int) (rt []byte, err error) {
+func videoFromUP(ctx context.Context, mid string, pn int) (rt []byte, err error) {
 	url := "https://api.bilibili.com/x/space/wbi/arc/search?order=pubdate&ps=49"
 	parse, _ := url2.Parse(url)
 	query := parse.Query()
@@ -213,7 +237,7 @@ func videoFromUP(mid string, pn int) (rt []byte, err error) {
 		return nil, err
 	}
 
-	req, err := newAPIRequest(url)
+	req, err := newAPIRequest(ctx, url)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -253,7 +277,7 @@ type Video struct {
 
 func AllVideo(mid string) ([]Video, error) {
 	// 第一页只请求一次：既拿总数，也复用它的列表，避免原来的重复请求。
-	first, err := videoFromUP(mid, 1)
+	first, err := videoFromUP(apiCtx(), mid, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +317,7 @@ func AllVideo(mid string) ([]Video, error) {
 			}
 		}
 		time.Sleep(time.Second)
-		bytes, err := videoFromUP(mid, i)
+		bytes, err := videoFromUP(apiCtx(), mid, i)
 		if err != nil {
 			log.Printf("获取 UP 主列表第 %d 页失败: %v, continuing...", i, err)
 			continue
@@ -392,7 +416,10 @@ type Stream struct {
 
 // fetchDash 获取 DASH 流信息。UGC 投稿走 x/player/wbi/playurl，
 // PGC 番剧走 pgc/player/web/playurl（响应包在 result 字段）。
-func fetchDash(v Video) (*biliDashResp, error) {
+func fetchDash(v Video) (*biliDashResp, error) { return fetchDashCtx(apiCtx(), v) }
+
+// fetchDashCtx 由调用方控制 context（取消信号与按调用凭据）。
+func fetchDashCtx(ctx context.Context, v Video) (*biliDashResp, error) {
 	base := "https://api.bilibili.com/x/player/wbi/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
 	if v.PGC {
 		base = "https://api.bilibili.com/pgc/player/web/playurl?fnver=0&fnval=3216&fourk=1&qn=127"
@@ -409,7 +436,7 @@ func fetchDash(v Video) (*biliDashResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := newAPIRequest(u)
+	req, err := newAPIRequest(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -455,8 +482,11 @@ func GetStream(v Video) (*Stream, error) {
 }
 
 // getStream 按显式配置选流，不读任何全局变量（除 HTTP 层的凭据与取消信号）。
-func (cfg streamConfig) getStream(v Video) (*Stream, error) {
-	dashResp, err := fetchDash(v)
+func (cfg streamConfig) getStream(v Video) (*Stream, error) { return cfg.getStreamCtx(apiCtx(), v) }
+
+// getStreamCtx 是选流的真正实现，context 由调用方提供。
+func (cfg streamConfig) getStreamCtx(ctx context.Context, v Video) (*Stream, error) {
+	dashResp, err := fetchDashCtx(ctx, v)
 	if err != nil {
 		return nil, err
 	}
@@ -588,7 +618,7 @@ func PrintDASHInfo(v Video) error {
 		return err
 	}
 
-	req, err := newAPIRequest(url)
+	req, err := newAPIRequest(apiCtx(), url)
 	if err != nil {
 		return err
 	}

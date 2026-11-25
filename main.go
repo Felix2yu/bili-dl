@@ -67,6 +67,14 @@ func run(args []string) int {
 	}
 	log.Printf("下载路径: %s", c.O)
 
+	// 非哔哩哔哩链接走通用引擎（X 等）。全是 B 站时继续既有流程：
+	// 那套实现包含 WBI、分 P、番剧、弹幕字幕与容器策略，迁移是独立工程。
+	if engineHandles(c.URLs) {
+		if code, handled := runEngine(ctx, c.URLs); handled {
+			return code
+		}
+	}
+
 	// ffmpeg 探测：缺失时只下不到合并，作为降级而不是致命错误。
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 5*time.Second)
 	if err := exec.CommandContext(probeCtx, "ffmpeg", "-version").Run(); err != nil {

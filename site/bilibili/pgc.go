@@ -71,7 +71,7 @@ func SeasonVideos(seasonID, epID string) ([]Video, error) {
 	} else {
 		return nil, fmt.Errorf("番剧需要 --ss <season_id> 或 --ep <ep_id>")
 	}
-	req, err := newAPIRequest(u)
+	req, err := newAPIRequest(apiCtx(), u)
 	if err != nil {
 		return nil, err
 	}

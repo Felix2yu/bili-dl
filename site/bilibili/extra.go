@@ -61,7 +61,7 @@ type dmXML struct {
 
 func downloadDanmaku(stream *Stream) error {
 	u := "https://api.bilibili.com/x/v1/dm/list.so?oid=" + url.QueryEscape(stream.Cid)
-	req, err := newAPIRequest(u)
+	req, err := newAPIRequest(apiCtx(), u)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ type subtitleBody struct {
 
 func downloadSubtitles(stream *Stream) error {
 	u := "https://api.bilibili.com/x/player/v2?bvid=" + url.QueryEscape(stream.BV) + "&cid=" + url.QueryEscape(stream.Cid)
-	req, err := newAPIRequest(u)
+	req, err := newAPIRequest(apiCtx(), u)
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func downloadSubtitles(stream *Stream) error {
 		if raw == "" {
 			continue
 		}
-		sreq, err := newAPIRequest(raw)
+		sreq, err := newAPIRequest(apiCtx(), raw)
 		if err != nil {
 			continue
 		}
